@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Superhuman 2.0</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+<link rel="manifest" href="/static/manifest.json" />
+<meta name="theme-color" content="#f4faf8" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f1613" media="(prefers-color-scheme: dark)" />
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Superhuman 2.0" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Superhuman 2.0</h1>
+      <p class="tagline" id="faseTagline">Laster …</p>
+    </div>
+  </header>
+
+  <nav class="tabbar">
+    <button class="tab active" data-tab="idag">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+      <span>I dag</span>
+    </button>
+    <button class="tab" data-tab="fysio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 6.6a4.8 4.8 0 0 0-7-4.4 4.8 4.8 0 0 0-7 4.4c0 3.6 3.6 6 7 9.4 3.4-3.4 7-5.8 7-9.4z"/></svg>
+      <span>Fysio</span>
+    </button>
+    <button class="tab" data-tab="hendelser">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V3"/><path d="M5 4h13l-2.5 4L18 12H5"/></svg>
+      <span>Hendelser</span>
+    </button>
+    <button class="tab" data-tab="vekt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v12"/><path d="M18 6v12"/><path d="M9 12h6"/><rect x="3" y="9" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/></svg>
+      <span>Vekt</span>
+    </button>
+    <button class="tab" data-tab="historikk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg>
+      <span>Historikk</span>
+    </button>
+  </nav>
+
+  <main>
+    <!-- I DAG -->
+    <section id="tab-idag" class="tab-panel active">
+      <div class="card sitat-card">
+        <p id="dagensSitat" class="sitat-tekst">–</p>
+      </div>
+
+      <div class="card" id="oktCard">
+        <div class="card-header">
+          <h2 id="oktDagNavn">–</h2>
+          <span class="badge" id="oktType"></span>
+        </div>
+        <p class="okt-beskrivelse" id="oktBeskrivelse"></p>
+        <div id="oktOvelserBlokk" class="info-blokk hidden">
+          <h3 id="oktOvelserTittel">Øvelser</h3>
+          <div id="oktOvelserListe" class="ovelse-chip-liste"></div>
+        </div>
+        <div id="fysioIdagBlokk" class="info-blokk hidden">
+          <h3>Fysio-øvelser</h3>
+          <ul id="fysioIdagListe" class="enkel-liste"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Denne uken</h2>
+        <div id="ukeGridMini" class="uke-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>Registrer dagen</h2>
+        <form id="dagsloggForm">
+          <div class="segmented-toggle" id="gjennomfortToggle">
+            <button type="button" class="segment segment-ja" data-val="1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              Gjennomført
+            </button>
+            <button type="button" class="segment segment-nei" data-val="0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+              Ikke gjennomført
+            </button>
+          </div>
+          <input type="hidden" id="gjennomfort" value="" />
+
+          <label class="toggle-row" id="fysioGjortRow">
+            <span>Jeg gjorde fysio-øvelsene</span>
+            <span class="ios-switch">
+              <input type="checkbox" id="fysioGjort" />
+              <span class="ios-switch-track"></span>
+            </span>
+          </label>
+          <div id="hendelserBlokk" class="hidden">
+            <p class="hendelser-tittel">Hendelser i dag</p>
+            <div id="hendelserListe" class="toggle-chip-liste"></div>
+          </div>
+          <label>Notater (valgfritt)
+            <textarea id="dagsloggNotater" rows="2" placeholder="F.eks. hvordan det føltes, vekt brukt på øvelser, osv."></textarea>
+          </label>
+          <button type="submit" class="btn primary">Lagre dagen</button>
+        </form>
+        <p id="dagsloggStatus" class="hint hidden"></p>
+      </div>
+    </section>
+
+    <!-- FYSIO -->
+    <section id="tab-fysio" class="tab-panel">
+      <div class="card">
+        <h2>Øvelser fra fysioterapeut</h2>
+        <p class="hint">Legg til øvelsene du får av fysioterapeuten her, så dukker de opp under "I dag" hver treningsdag. Skru av en øvelse i stedet for å slette den hvis du bare skal ta en pause fra den.</p>
+        <ul id="fysioListe" class="fysio-liste"></ul>
+        <button type="button" id="nyFysioBtn" class="btn primary">+ Legg til øvelse</button>
+      </div>
+    </section>
+
+    <!-- HENDELSER -->
+    <section id="tab-hendelser" class="tab-panel">
+      <div class="card">
+        <h2>Hendelsestyper</h2>
+        <p class="hint">Ting du vil kunne krysse av for i den daglige loggen, f.eks. alkohol eller sykdom. Skru av en type i stedet for å slette den hvis du bare vil slutte å bruke den midlertidig.</p>
+        <ul id="hendelseListe" class="fysio-liste"></ul>
+        <button type="button" id="nyHendelseBtn" class="btn primary">+ Legg til hendelsestype</button>
+      </div>
+    </section>
+
+    <!-- VEKT -->
+    <section id="tab-vekt" class="tab-panel">
+      <div class="card">
+        <h2>Vektlogg</h2>
+        <form id="vektForm" class="inline-form">
+          <label>Dato
+            <input type="date" id="vektDato" required />
+          </label>
+          <label>Vekt (kg)
+            <input type="text" id="vektKg" inputmode="decimal" placeholder="F.eks. 92,4" required />
+          </label>
+          <button type="submit" class="btn primary">Legg til</button>
+        </form>
+        <div id="vektGrafWrap" class="hidden">
+          <svg id="vektGraf" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+        </div>
+        <ul id="vektListe" class="vekt-liste"></ul>
+      </div>
+    </section>
+
+    <!-- HISTORIKK -->
+    <section id="tab-historikk" class="tab-panel">
+      <div class="card">
+        <h2>Oversikt</h2>
+        <div id="historikkStats" class="stats-grid"></div>
+      </div>
+      <div class="card">
+        <h2>Tidligere dager</h2>
+        <ul id="historikkListe" class="historikk-liste"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="fysioModalTitle">Ny øvelse</h2>
+      </div>
+      <form id="fysioForm">
+        <input type="hidden" id="fysioId" />
+        <label>Navn <span class="pakrevd">— må fylles ut</span>
+          <input type="text" id="fysioNavn" required placeholder="F.eks. Katt og kamel" />
+        </label>
+        <label>Beskrivelse (valgfritt)
+          <textarea id="fysioBeskrivelse" rows="3" placeholder="F.eks. 2 sett x 10 reps, som vist av fysioterapeuten"></textarea>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="fysioAktiv" checked />
+          Aktiv (vises under "I dag")
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="fysioDeleteBtn" class="btn danger hidden">Slett</button>
+          <div class="spacer"></div>
+          <button type="button" id="fysioCancelBtn" class="btn">Avbryt</button>
+          <button type="submit" class="btn primary">Lagre</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="hendelseModalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="hendelseModalTitle">Ny hendelsestype</h2>
+      </div>
+      <form id="hendelseForm">
+        <input type="hidden" id="hendelseId" />
+        <label>Navn <span class="pakrevd">— må fylles ut</span>
+          <input type="text" id="hendelseNavn" required placeholder="F.eks. Alkohol" />
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="hendelseAktiv" checked />
+          Aktiv (vises i den daglige loggen)
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="hendelsePauserPlan" />
+          Setter treningsplanen på pause den dagen (f.eks. sykdom) — ukeplanen venter da på deg i stedet for å telle den dagen med
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="hendelseDeleteBtn" class="btn danger hidden">Slett</button>
+          <div class="spacer"></div>
+          <button type="button" id="hendelseCancelBtn" class="btn">Avbryt</button>
+          <button type="submit" class="btn primary">Lagre</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="dagModalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header card-header">
+        <h2 id="dagModalTittel">Dag</h2>
+        <span class="badge" id="dagModalType"></span>
+      </div>
+      <p class="okt-beskrivelse" id="dagModalBeskrivelse"></p>
+      <div id="dagModalOvelserBlokk" class="info-blokk hidden">
+        <h3 id="dagModalOvelserTittel">Øvelser</h3>
+        <div id="dagModalOvelserListe" class="ovelse-chip-liste"></div>
+      </div>
+      <div class="modal-actions">
+        <div class="spacer"></div>
+        <button type="button" id="dagModalLukkBtn" class="btn primary">Lukk</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ovelseModalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="ovelseModalTittel">Øvelse</h2>
+      </div>
+      <div id="ovelseModalSvg" class="ovelse-illustrasjon"></div>
+      <ol id="ovelseModalSteg" class="ovelse-steg"></ol>
+      <div class="ovelse-fokus">
+        <strong>Pass på:</strong> <span id="ovelseModalFokus"></span>
+      </div>
+
+      <div id="ovelseModalLoggBlokk" class="ovelse-logg hidden">
+        <h3>Logg dagens vekt</h3>
+        <p id="ovelseModalSistBrukt" class="hint"></p>
+        <div class="inline-form">
+          <label>Vekt (kg)
+            <input type="text" id="ovelseModalVekt" inputmode="decimal" placeholder="F.eks. 8" />
+          </label>
+          <label>Reps
+            <input type="text" id="ovelseModalReps" inputmode="numeric" placeholder="F.eks. 12" />
+          </label>
+          <button type="button" id="ovelseModalLoggLagreBtn" class="btn primary">Lagre</button>
+        </div>
+        <p id="ovelseModalLoggStatus" class="hint hidden">Lagret!</p>
+      </div>
+
+      <div class="modal-actions">
+        <div class="spacer"></div>
+        <button type="button" id="ovelseLukkBtn" class="btn primary">Lukk</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
