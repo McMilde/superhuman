@@ -380,9 +380,13 @@ def init_db():
         """
     )
     if conn.execute("SELECT 1 FROM innstillinger WHERE id = 1").fetchone() is None:
+        # SEED_START_DATO brukes kun første gang en helt ny database opprettes et
+        # nytt sted (f.eks. ved flytting til skyen), slik at man kan gjenskape
+        # riktig ukenummer i stedet for at telling starter på nytt fra i dag.
+        start_dato = os.environ.get("SEED_START_DATO") or date.today().isoformat()
         conn.execute(
             "INSERT INTO innstillinger (id, start_dato) VALUES (1, ?)",
-            (date.today().isoformat(),),
+            (start_dato,),
         )
 
     conn.execute(
