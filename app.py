@@ -20,7 +20,9 @@ UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søn
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 90  # 90 dager
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 365  # 1 år
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 
 @app.before_request
