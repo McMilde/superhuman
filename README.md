@@ -43,13 +43,13 @@ Nå får du et varsel hver dag med akkurat hva slags trening du har, hentet dire
 
 Planen er delt i tre faser som bygger på hverandre:
 
-- **Fase 1 (uke 1-4):** Bygge vane og teknikk
-- **Fase 2 (uke 5-8):** Øke mengde
+- **Fase 1 (uke 1-4):** Bygge vane og kondisjon — kun gange og roing, ingen styrkeøvelser ennå
+- **Fase 2 (uke 5-8):** Styrke introduseres, i tillegg til gange og roing
 - **Fase 3 (uke 9+):** Videre progresjon
 
 Uke 1 startet automatisk den dagen appen ble tatt i bruk første gang. Appen regner selv ut hvilken uke og fase du er i.
 
-I uke 1-4 er lørdag en ekstra hviledag (i tillegg til onsdag og søndag) — altså 3 hviledager i uken mens du bygger opp vanen. Fra uke 5 kommer den lange gåturen på lørdag tilbake.
+I uke 1-4 er lørdag en ekstra hviledag (i tillegg til onsdag og søndag) — altså 3 hviledager i uken mens du bygger opp vanen. Fra uke 5 kommer den lange gåturen på lørdag tilbake, og tirsdag/fredag går fra gange/roing over til styrkeøkter.
 
 Gange (walkingpad) og roing (rowingpad) har egen fremgang uke for uke gjennom fase 1 og 2 — tid, tempo og stigning økes gradvis. Fra fase 3 (uke 9+) legges uken om med en tredje styrkeøkt.
 
