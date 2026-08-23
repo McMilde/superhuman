@@ -270,10 +270,10 @@ OVELSER = {
 STYRKE_ID_LISTE = ["kneboy", "press", "roing_manual", "hoftehev", "tahev"]
 
 FASER = [
-    {"fase": 1, "uke_fra": 1, "uke_til": 4, "navn": "Bygge vane og teknikk",
-     "beskrivelse": "Målet er å lære riktig teknikk og bygge en treningsvane - ikke å presse hardt."},
-    {"fase": 2, "uke_fra": 5, "uke_til": 8, "navn": "Øke mengde",
-     "beskrivelse": "Samme struktur som fase 1, men litt mer tid/vekt for hver uke som går."},
+    {"fase": 1, "uke_fra": 1, "uke_til": 4, "navn": "Bygge vane og kondisjon",
+     "beskrivelse": "Kun gange og roing denne perioden - ingen vekter ennå. Målet er å bygge en treningsvane og en grunnkondisjon, ikke å presse hardt."},
+    {"fase": 2, "uke_fra": 5, "uke_til": 8, "navn": "Introduserer styrke",
+     "beskrivelse": "Nå kommer styrkeøktene inn i tillegg til gange og roing. Fortsatt lette vekter og fokus på teknikk."},
     {"fase": 3, "uke_fra": 9, "uke_til": None, "navn": "Videre progresjon",
      "beskrivelse": "En tredje styrkeøkt og lengre utholdenhetsøkter, justert etter hvordan kroppen din responderer."},
 ]
@@ -292,8 +292,11 @@ OKT_MAL = [
     (7, 7, 1, "Gange", "gange", "Walkingpad, 30 min med 2-3% stigning."),
     (8, 8, 1, "Gange", "gange", "Walkingpad, 30 min. Valgfritt: legg inn 2 x 2 minutter litt raskere tempo underveis."),
 
-    # Tirsdag - Styrke, følger fasen
-    (1, 4, 2, "Styrke", "styrke", STYRKE_OVELSER),
+    # Tirsdag - uke 1-4 er ren kondisjon (roing) uten styrke ennå, følger fasen fra uke 5
+    (1, 1, 2, "Roing", "roing", "Rowingpad, 10 min rolig.\n" + ROING_TEKNIKK),
+    (2, 2, 2, "Roing", "roing", "Rowingpad, 12 min rolig.\n" + ROING_TEKNIKK),
+    (3, 3, 2, "Roing", "roing", "Rowingpad, 15 min rolig.\n" + ROING_TEKNIKK),
+    (4, 4, 2, "Roing", "roing", "Rowingpad, 15 min. Kjenn etter om drag-tempoet kan være litt jevnere.\n" + ROING_TEKNIKK),
     (5, 8, 2, "Styrke", "styrke", STYRKE_OVELSER + "\nØk litt i vekt eller reps sammenlignet med forrige uke."),
 
     # Onsdag - Hvile, følger fasen
@@ -310,8 +313,11 @@ OKT_MAL = [
     (7, 7, 4, "Roing", "roing", "Rowingpad, 20 min rolig.\n" + ROING_TEKNIKK),
     (8, 8, 4, "Roing", "roing", "Rowingpad, 20 min. Valgfritt: del opp i 2 x 10 min med kort pause.\n" + ROING_TEKNIKK),
 
-    # Fredag - Styrke, følger fasen
-    (1, 4, 5, "Styrke", "styrke", STYRKE_OVELSER),
+    # Fredag - uke 1-4 er ren kondisjon (gange) uten styrke ennå, følger fasen fra uke 5
+    (1, 1, 5, "Gange", "gange", "Walkingpad, 15 min i rolig tempo (ca. 3,5-4 km/t)."),
+    (2, 2, 5, "Gange", "gange", "Walkingpad, 18 min i samme rolige tempo."),
+    (3, 3, 5, "Gange", "gange", "Walkingpad, 20 min. Prøv gjerne 1% stigning hvis du har den funksjonen."),
+    (4, 4, 5, "Gange", "gange", "Walkingpad, 20 min med 2% stigning."),
     (5, 8, 5, "Styrke", "styrke", STYRKE_OVELSER + "\nØk litt i vekt eller reps sammenlignet med forrige uke."),
 
     # Lørdag - ekstra hviledag i uke 1-4 (mandag dekker allerede gange), lang gåtur fra uke 5
@@ -408,21 +414,14 @@ def init_db():
             FASER,
         )
 
-    # okt_mal er ren plandata (ikke noe brukeren har lagt inn selv), så ved
-    # utdatert skjema (gammel "fase"-kolonne, eller den fjernede "stabilisering"-
-    # kolonnen) sletter vi og bygger den på nytt - påvirker ikke
-    # dagslogg/vektlogg/fysio_ovelser.
-    finnes_gammelt_skjema = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'okt_mal'"
-    ).fetchone() is not None
-    if finnes_gammelt_skjema:
-        kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(okt_mal)")}
-        if "uke_fra" not in kolonner or "stabilisering" in kolonner:
-            conn.execute("DROP TABLE okt_mal")
-
+    # okt_mal er ren plandata (ikke noe brukeren har lagt inn selv) - den slettes
+    # og bygges på nytt fra OKT_MAL hver gang appen starter, slik at endringer i
+    # selve treningsplanen alltid slår igjennom. Påvirker ikke
+    # dagslogg/vektlogg/fysio_ovelser/hendelse_typer/styrke_logg.
+    conn.execute("DROP TABLE IF EXISTS okt_mal")
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS okt_mal (
+        CREATE TABLE okt_mal (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uke_fra INTEGER NOT NULL,
             uke_til INTEGER,
@@ -433,11 +432,10 @@ def init_db():
         )
         """
     )
-    if conn.execute("SELECT COUNT(*) AS n FROM okt_mal").fetchone()["n"] == 0:
-        conn.executemany(
-            "INSERT INTO okt_mal (uke_fra, uke_til, ukedag, tittel, type, beskrivelse) VALUES (?, ?, ?, ?, ?, ?)",
-            OKT_MAL,
-        )
+    conn.executemany(
+        "INSERT INTO okt_mal (uke_fra, uke_til, ukedag, tittel, type, beskrivelse) VALUES (?, ?, ?, ?, ?, ?)",
+        OKT_MAL,
+    )
 
     conn.execute(
         """
