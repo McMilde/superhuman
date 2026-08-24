@@ -55,6 +55,11 @@ def login():
     <html lang="no"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Superhuman 2.0</title>
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+    <link rel="manifest" href="/static/manifest.json" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Superhuman 2.0" />
     <style>
       body {{ font-family: -apple-system, sans-serif; background: #f4faf8; display: flex;
              align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
