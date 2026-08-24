@@ -16,6 +16,11 @@ DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).parent / "trening.db
 # på wifi), kreves ingen innlogging - appen oppfører seg akkurat som før.
 APP_PASSORD = os.environ.get("APP_PASSORD")
 
+# Egen, separat hemmelig kode for /api/varsel - denne ruten er unntatt fra
+# innloggingskravet (Snarveier-appen på iPhone kan ikke logge inn), så den
+# beskyttes i stedet med en lang kode i selve lenken.
+VARSEL_NOKKEL = os.environ.get("VARSEL_NOKKEL")
+
 UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
 
 app = Flask(__name__)
@@ -29,7 +34,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 def krev_innlogging():
     if not APP_PASSORD:
         return
-    if request.endpoint in ("login", "static"):
+    if request.endpoint in ("login", "static", "api_varsel"):
         return
     if not session.get("innlogget"):
         return redirect(url_for("login"))
@@ -631,6 +636,9 @@ def api_dag():
 @app.route("/api/varsel")
 def api_varsel():
     """Ren tekst beregnet på f.eks. iPhonens Snarveier-app, til bruk i et daglig varsel."""
+    if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
+        return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
+
     dato_obj = date.today()
     dato_str = dato_obj.isoformat()
     db = get_db()
