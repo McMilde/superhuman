@@ -703,6 +703,14 @@ def api_varsel():
     if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
         return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
 
+    # Gratis-passasjer: appen sjekkes uansett hver kveld av Snarveier-varselet,
+    # så vi bruker samme kall til å plukke opp evt. ny Withings-data.
+    # Skal aldri kunne ødelegge selve varselet, uansett hva som går galt her.
+    try:
+        withings_synk()
+    except Exception:
+        pass
+
     dato_obj = date.today()
     dato_str = dato_obj.isoformat()
     db = get_db()
