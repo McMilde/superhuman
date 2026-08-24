@@ -182,7 +182,8 @@ function settOppFaner() {
       $(`tab-${btn.dataset.tab}`).classList.add("active");
       if (btn.dataset.tab === "fysio") lastFysio();
       if (btn.dataset.tab === "hendelser") lastHendelser();
-      if (btn.dataset.tab === "vekt") { lastVekt(); lastWithingsStatus(); }
+      if (btn.dataset.tab === "vekt") lastVekt();
+      if (btn.dataset.tab === "withings") { lastWithingsStatus(); lastWithingsData(); }
       if (btn.dataset.tab === "historikk") lastHistorikk();
     });
   });
@@ -589,7 +590,7 @@ async function lastWithingsStatus() {
   boks.classList.remove("hidden");
 
   if (!data.tilkoblet) {
-    tekst.textContent = "Vekten fylles inn manuelt. Koble til Withings for å hente den automatisk.";
+    tekst.textContent = "Ikke koblet til Withings ennå.";
     kobleBtn.classList.remove("hidden");
     synkBtn.classList.add("hidden");
     return;
@@ -600,6 +601,35 @@ async function lastWithingsStatus() {
   tekst.textContent = data.sist_synket
     ? `Koblet til Withings. Sist synket: ${new Date(data.sist_synket).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "short" })}`
     : "Koblet til Withings.";
+}
+
+async function lastWithingsData() {
+  const res = await fetch("/api/withings/data");
+  const data = await res.json();
+  const liste = $("withingsDataListe");
+
+  if (data.length === 0) {
+    liste.innerHTML = `<li class="tom">Ingen data fra Withings ennå.</li>`;
+    return;
+  }
+
+  liste.innerHTML = data
+    .map((d) => {
+      const badges = d.malinger
+        .map(
+          (m) =>
+            `<span class="badge">${escapeHtml(m.navn)}: ${m.verdi.toString().replace(".", ",")} ${escapeHtml(m.enhet)}</span>`
+        )
+        .join("");
+      return `
+        <li class="historikk-rad">
+          <div class="historikk-rad-header">
+            <span class="historikk-dato">${formaterDato(d.dato)}</span>
+          </div>
+          <div class="historikk-badges">${badges}</div>
+        </li>`;
+    })
+    .join("");
 }
 
 async function synkroniserWithings() {
@@ -615,6 +645,7 @@ async function synkroniserWithings() {
     return;
   }
   await lastWithingsStatus();
+  await lastWithingsData();
   if (data.nye > 0) lastVekt();
 }
 

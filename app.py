@@ -24,10 +24,22 @@ APP_PASSORD = os.environ.get("APP_PASSORD")
 # beskyttes i stedet med en lang kode i selve lenken.
 VARSEL_NOKKEL = os.environ.get("VARSEL_NOKKEL")
 
-# For automatisk henting av vekt fra Withings-vekten (satt opp i developer.withings.com).
+# For automatisk henting av data fra Withings-vekten (satt opp i developer.withings.com).
 WITHINGS_CLIENT_ID = os.environ.get("WITHINGS_CLIENT_ID")
 WITHINGS_CLIENT_SECRET = os.environ.get("WITHINGS_CLIENT_SECRET")
 WITHINGS_REDIRECT_URI = "https://trening.flibber.no/withings/callback"
+
+# Withings sine måletype-koder -> norsk navn og enhet. Body Smart-vekten sender
+# stort sett disse; ukjente typer hoppes bare stille over.
+WITHINGS_MALETYPER = {
+    1: ("Vekt", "kg"),
+    6: ("Fettprosent", "%"),
+    8: ("Fettmasse", "kg"),
+    76: ("Muskelmasse", "kg"),
+    77: ("Kroppsvann", "kg"),
+    88: ("Beinmasse", "kg"),
+    11: ("Puls", "bpm"),
+}
 
 UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
 
@@ -42,7 +54,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 def krev_innlogging():
     if not APP_PASSORD:
         return
-    if request.endpoint in ("login", "static", "api_varsel", "withings_callback"):
+    if request.endpoint in ("login", "static", "api_varsel", "withings_callback", "api_withings_synk_automatisk"):
         return
     if not session.get("innlogget"):
         return redirect(url_for("login"))
@@ -553,6 +565,22 @@ def init_db():
         """
     )
 
+    # Alle måletyper fra Withings (vekt, fettprosent, muskelmasse, puls osv.),
+    # ikke bare vekten - se WITHINGS_MALETYPER. UNIQUE(grpid, type) gjør synk
+    # trygt å kjøre flere ganger uten å lage duplikater.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS withings_malinger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grpid TEXT NOT NULL,
+            dato TEXT NOT NULL,
+            type INTEGER NOT NULL,
+            verdi REAL NOT NULL,
+            UNIQUE(grpid, type)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 
@@ -675,14 +703,6 @@ def api_varsel():
     if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
         return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
 
-    # Gratis-passasjer: appen sjekkes uansett hver kveld av Snarveier-varselet,
-    # så vi bruker samme kall til å plukke opp evt. ny vekt fra Withings.
-    # Skal aldri kunne ødelegge selve varselet, uansett hva som går galt her.
-    try:
-        withings_synk_vekt()
-    except Exception:
-        pass
-
     dato_obj = date.today()
     dato_str = dato_obj.isoformat()
     db = get_db()
@@ -767,8 +787,10 @@ def withings_hent_gyldig_token():
     return rad["access_token"], None
 
 
-def withings_synk_vekt():
-    """Henter nye vektmålinger fra Withings og lagrer dem i vektlogg.
+def withings_synk():
+    """Henter alle nye målinger fra Withings (vekt, fettprosent, muskelmasse,
+    puls osv. - se WITHINGS_MALETYPER) og lagrer dem i withings_malinger.
+    Vekten (type 1) legges i tillegg inn i vektlogg, som før.
     Returnerer (antall_nye, None) eller (None, feiltekst)."""
     access_token, feil = withings_hent_gyldig_token()
     if feil:
@@ -777,7 +799,7 @@ def withings_synk_vekt():
     db = get_db()
     rad = db.execute("SELECT siste_maling_epoch FROM withings_konto WHERE id = 1").fetchone()
 
-    parametre = {"action": "getmeas", "meastype": 1, "category": 1}
+    parametre = {"action": "getmeas", "category": 1}
     if rad["siste_maling_epoch"]:
         parametre["lastupdate"] = rad["siste_maling_epoch"]
 
@@ -801,15 +823,22 @@ def withings_synk_vekt():
         nyeste_epoch = max(nyeste_epoch, gruppe["date"])
         dato_lokal = datetime.fromtimestamp(gruppe["date"], tz=ZoneInfo("Europe/Oslo")).date().isoformat()
         for m in gruppe.get("measures", []):
-            if m.get("type") != 1:  # 1 = vekt. Andre typer (fettprosent osv.) hoppes over.
+            if m.get("type") not in WITHINGS_MALETYPER:
                 continue
-            vekt_kg = round(m["value"] * (10 ** m["unit"]), 2)
+            verdi = round(m["value"] * (10 ** m["unit"]), 2)
+
             cur = db.execute(
-                "INSERT OR IGNORE INTO vektlogg (dato, vekt_kg, notater, withings_grpid) VALUES (?, ?, '', ?)",
-                (dato_lokal, vekt_kg, str(gruppe["grpid"])),
+                "INSERT OR IGNORE INTO withings_malinger (grpid, dato, type, verdi) VALUES (?, ?, ?, ?)",
+                (str(gruppe["grpid"]), dato_lokal, m["type"], verdi),
             )
             if cur.rowcount:
                 antall_nye += 1
+
+            if m["type"] == 1:
+                db.execute(
+                    "INSERT OR IGNORE INTO vektlogg (dato, vekt_kg, notater, withings_grpid) VALUES (?, ?, '', ?)",
+                    (dato_lokal, verdi, str(gruppe["grpid"])),
+                )
 
     db.execute(
         "UPDATE withings_konto SET siste_maling_epoch = ?, sist_synket = ? WHERE id = 1",
@@ -850,7 +879,7 @@ def withings_callback():
     if feil:
         return Response(f"Noe gikk galt ved tilkobling til Withings: {feil}", status=502, mimetype="text/plain")
 
-    withings_synk_vekt()
+    withings_synk()
     return redirect(url_for("index"))
 
 
@@ -861,14 +890,44 @@ def api_withings_status():
     return jsonify({"tilkoblet": rad is not None, "sist_synket": rad["sist_synket"] if rad else None})
 
 
+@app.route("/api/withings/data")
+def api_withings_data():
+    db = get_db()
+    rader = db.execute(
+        "SELECT dato, type, verdi FROM withings_malinger ORDER BY dato DESC, type"
+    ).fetchall()
+
+    dager = {}
+    for r in rader:
+        navn, enhet = WITHINGS_MALETYPER.get(r["type"], (f"Type {r['type']}", ""))
+        dager.setdefault(r["dato"], []).append({"navn": navn, "verdi": r["verdi"], "enhet": enhet})
+
+    return jsonify([{"dato": dato, "malinger": malinger} for dato, malinger in dager.items()])
+
+
 @app.route("/api/withings/synk", methods=["POST"])
 def api_withings_synk():
-    antall, feil = withings_synk_vekt()
+    antall, feil = withings_synk()
     if feil == "ikke_tilkoblet":
         return jsonify({"error": "Ikke koblet til Withings ennå."}), 400
     if feil:
         return jsonify({"error": feil}), 502
     return jsonify({"nye": antall})
+
+
+@app.route("/api/withings/synk-automatisk")
+def api_withings_synk_automatisk():
+    """Beregnet på en egen daglig Snarveier-automatisering (kl. 10) - samme
+    kode-beskyttelse som /api/varsel, siden telefonen ikke kan logge inn."""
+    if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
+        return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
+
+    antall, feil = withings_synk()
+    if feil == "ikke_tilkoblet":
+        return Response("Ikke koblet til Withings ennå.", mimetype="text/plain")
+    if feil:
+        return Response(f"Withings-synk feilet: {feil}", status=502, mimetype="text/plain")
+    return Response(f"Withings synkronisert: {antall} nye målinger.", mimetype="text/plain")
 
 
 @app.route("/api/uke")
