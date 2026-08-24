@@ -135,6 +135,11 @@
     <section id="tab-vekt" class="tab-panel">
       <div class="card">
         <h2>Vektlogg</h2>
+        <div id="withingsBoks" class="withings-boks hidden">
+          <p id="withingsStatusTekst" class="hint"></p>
+          <a id="withingsKobleBtn" href="/withings/connect" class="btn hidden">Koble til Withings-vekt</a>
+          <button type="button" id="withingsSynkBtn" class="btn hidden">Synkroniser nå</button>
+        </div>
         <form id="vektForm" class="inline-form">
           <label>Dato
             <input type="date" id="vektDato" required />

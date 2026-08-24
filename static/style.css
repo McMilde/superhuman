@@ -460,6 +460,16 @@ form textarea {
   margin-top: 10px;
 }
 
+.withings-boks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.withings-boks .hint { margin: 0; flex: 1 1 220px; }
+
 /* Uken */
 
 .uke-grid {

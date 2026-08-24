@@ -4,10 +4,13 @@ import secrets
 import socket
 import sqlite3
 import webbrowser
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Timer
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
+import requests
 from flask import Flask, Response, g, jsonify, redirect, request, session, url_for
 
 DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).parent / "trening.db")))
@@ -24,6 +27,7 @@ VARSEL_NOKKEL = os.environ.get("VARSEL_NOKKEL")
 # For automatisk henting av vekt fra Withings-vekten (satt opp i developer.withings.com).
 WITHINGS_CLIENT_ID = os.environ.get("WITHINGS_CLIENT_ID")
 WITHINGS_CLIENT_SECRET = os.environ.get("WITHINGS_CLIENT_SECRET")
+WITHINGS_REDIRECT_URI = "https://trening.flibber.no/withings/callback"
 
 UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
 
@@ -525,6 +529,29 @@ def init_db():
         )
         """
     )
+    vektlogg_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(vektlogg)")}
+    if "withings_grpid" not in vektlogg_kolonner:
+        conn.execute("ALTER TABLE vektlogg ADD COLUMN withings_grpid TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_vektlogg_withings_grpid "
+        "ON vektlogg(withings_grpid) WHERE withings_grpid IS NOT NULL"
+    )
+
+    # Lagrer tilgangen appen får fra Withings etter at brukeren kobler til vekten
+    # sin (se /withings/connect). Kun én rad - appen er for én person.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS withings_konto (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            utloper TEXT NOT NULL,
+            withings_bruker_id TEXT,
+            siste_maling_epoch INTEGER NOT NULL DEFAULT 0,
+            sist_synket TEXT
+        )
+        """
+    )
 
     conn.commit()
     conn.close()
@@ -648,6 +675,14 @@ def api_varsel():
     if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
         return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
 
+    # Gratis-passasjer: appen sjekkes uansett hver kveld av Snarveier-varselet,
+    # så vi bruker samme kall til å plukke opp evt. ny vekt fra Withings.
+    # Skal aldri kunne ødelegge selve varselet, uansett hva som går galt her.
+    try:
+        withings_synk_vekt()
+    except Exception:
+        pass
+
     dato_obj = date.today()
     dato_str = dato_obj.isoformat()
     db = get_db()
@@ -675,13 +710,165 @@ def api_varsel():
 
 # ---- Withings (automatisk henting av vekt) ----
 
+def withings_hent_og_lagre_token(**felter):
+    """Henter access/refresh-token fra Withings (enten med en engangskode fra
+    innlogging, eller med et refresh_token) og lagrer resultatet. Returnerer
+    en feiltekst hvis noe gikk galt, ellers None."""
+    data = {
+        "action": "requesttoken",
+        "client_id": WITHINGS_CLIENT_ID,
+        "client_secret": WITHINGS_CLIENT_SECRET,
+        **felter,
+    }
+    try:
+        svar = requests.post("https://wbsapi.withings.net/v2/oauth2", data=data, timeout=15).json()
+    except requests.RequestException as e:
+        return str(e)
+
+    if svar.get("status") != 0:
+        return svar.get("error") or f"Withings-feil (status {svar.get('status')})"
+
+    kropp = svar["body"]
+    utloper = (datetime.now(timezone.utc) + timedelta(seconds=int(kropp["expires_in"]) - 60)).isoformat()
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO withings_konto (id, access_token, refresh_token, utloper, withings_bruker_id)
+        VALUES (1, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            utloper = excluded.utloper,
+            withings_bruker_id = excluded.withings_bruker_id
+        """,
+        (kropp["access_token"], kropp["refresh_token"], utloper, str(kropp.get("userid", ""))),
+    )
+    db.commit()
+    return None
+
+
+def withings_hent_gyldig_token():
+    """Returnerer (access_token, None) eller (None, feiltekst). Fornyer selv
+    tilgangen via refresh_token når den er i ferd med å gå ut."""
+    db = get_db()
+    rad = db.execute("SELECT * FROM withings_konto WHERE id = 1").fetchone()
+    if rad is None:
+        return None, "ikke_tilkoblet"
+
+    if datetime.now(timezone.utc) < datetime.fromisoformat(rad["utloper"]):
+        return rad["access_token"], None
+
+    feil = withings_hent_og_lagre_token(grant_type="refresh_token", refresh_token=rad["refresh_token"])
+    if feil:
+        return None, feil
+
+    rad = db.execute("SELECT access_token FROM withings_konto WHERE id = 1").fetchone()
+    return rad["access_token"], None
+
+
+def withings_synk_vekt():
+    """Henter nye vektmålinger fra Withings og lagrer dem i vektlogg.
+    Returnerer (antall_nye, None) eller (None, feiltekst)."""
+    access_token, feil = withings_hent_gyldig_token()
+    if feil:
+        return None, feil
+
+    db = get_db()
+    rad = db.execute("SELECT siste_maling_epoch FROM withings_konto WHERE id = 1").fetchone()
+
+    parametre = {"action": "getmeas", "meastype": 1, "category": 1}
+    if rad["siste_maling_epoch"]:
+        parametre["lastupdate"] = rad["siste_maling_epoch"]
+
+    try:
+        svar = requests.get(
+            "https://wbsapi.withings.net/measure",
+            params=parametre,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        ).json()
+    except requests.RequestException as e:
+        return None, str(e)
+
+    if svar.get("status") != 0:
+        return None, svar.get("error") or f"Withings-feil (status {svar.get('status')})"
+
+    antall_nye = 0
+    nyeste_epoch = rad["siste_maling_epoch"]
+
+    for gruppe in svar["body"].get("measuregrps", []):
+        nyeste_epoch = max(nyeste_epoch, gruppe["date"])
+        dato_lokal = datetime.fromtimestamp(gruppe["date"], tz=ZoneInfo("Europe/Oslo")).date().isoformat()
+        for m in gruppe.get("measures", []):
+            if m.get("type") != 1:  # 1 = vekt. Andre typer (fettprosent osv.) hoppes over.
+                continue
+            vekt_kg = round(m["value"] * (10 ** m["unit"]), 2)
+            cur = db.execute(
+                "INSERT OR IGNORE INTO vektlogg (dato, vekt_kg, notater, withings_grpid) VALUES (?, ?, '', ?)",
+                (dato_lokal, vekt_kg, str(gruppe["grpid"])),
+            )
+            if cur.rowcount:
+                antall_nye += 1
+
+    db.execute(
+        "UPDATE withings_konto SET siste_maling_epoch = ?, sist_synket = ? WHERE id = 1",
+        (nyeste_epoch, datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+    return antall_nye, None
+
+
+@app.route("/withings/connect")
+def withings_connect():
+    """Sender brukeren til Withings for å logge inn og godkjenne tilgang."""
+    state = secrets.token_urlsafe(24)
+    session["withings_state"] = state
+    parametre = {
+        "response_type": "code",
+        "client_id": WITHINGS_CLIENT_ID,
+        "redirect_uri": WITHINGS_REDIRECT_URI,
+        "scope": "user.metrics",
+        "state": state,
+    }
+    return redirect("https://account.withings.com/oauth2_user/authorize2?" + urlencode(parametre))
+
+
 @app.route("/withings/callback")
 def withings_callback():
     """Withings sender brukeren hit etter innlogging/godkjenning på deres side."""
     code = request.args.get("code")
     if not code:
         return Response("Withings-tilkoblingen er klar til bruk.", mimetype="text/plain")
-    return Response("Withings-koden ble mottatt. Kobler til i neste steg.", mimetype="text/plain")
+
+    if request.args.get("state") != session.get("withings_state"):
+        return Response("Ugyldig forespørsel (feil state). Prøv å koble til på nytt.", status=400, mimetype="text/plain")
+
+    feil = withings_hent_og_lagre_token(
+        grant_type="authorization_code", code=code, redirect_uri=WITHINGS_REDIRECT_URI
+    )
+    if feil:
+        return Response(f"Noe gikk galt ved tilkobling til Withings: {feil}", status=502, mimetype="text/plain")
+
+    withings_synk_vekt()
+    return redirect(url_for("index"))
+
+
+@app.route("/api/withings/status")
+def api_withings_status():
+    db = get_db()
+    rad = db.execute("SELECT sist_synket FROM withings_konto WHERE id = 1").fetchone()
+    return jsonify({"tilkoblet": rad is not None, "sist_synket": rad["sist_synket"] if rad else None})
+
+
+@app.route("/api/withings/synk", methods=["POST"])
+def api_withings_synk():
+    antall, feil = withings_synk_vekt()
+    if feil == "ikke_tilkoblet":
+        return jsonify({"error": "Ikke koblet til Withings ennå."}), 400
+    if feil:
+        return jsonify({"error": feil}), 502
+    return jsonify({"nye": antall})
 
 
 @app.route("/api/uke")

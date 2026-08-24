@@ -182,7 +182,7 @@ function settOppFaner() {
       $(`tab-${btn.dataset.tab}`).classList.add("active");
       if (btn.dataset.tab === "fysio") lastFysio();
       if (btn.dataset.tab === "hendelser") lastHendelser();
-      if (btn.dataset.tab === "vekt") lastVekt();
+      if (btn.dataset.tab === "vekt") { lastVekt(); lastWithingsStatus(); }
       if (btn.dataset.tab === "historikk") lastHistorikk();
     });
   });
@@ -578,6 +578,46 @@ async function leggTilVekt(e) {
   }
 }
 
+async function lastWithingsStatus() {
+  const boks = $("withingsBoks");
+  const tekst = $("withingsStatusTekst");
+  const kobleBtn = $("withingsKobleBtn");
+  const synkBtn = $("withingsSynkBtn");
+
+  const res = await fetch("/api/withings/status");
+  const data = await res.json();
+  boks.classList.remove("hidden");
+
+  if (!data.tilkoblet) {
+    tekst.textContent = "Vekten fylles inn manuelt. Koble til Withings for å hente den automatisk.";
+    kobleBtn.classList.remove("hidden");
+    synkBtn.classList.add("hidden");
+    return;
+  }
+
+  kobleBtn.classList.add("hidden");
+  synkBtn.classList.remove("hidden");
+  tekst.textContent = data.sist_synket
+    ? `Koblet til Withings. Sist synket: ${new Date(data.sist_synket).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "short" })}`
+    : "Koblet til Withings.";
+}
+
+async function synkroniserWithings() {
+  const synkBtn = $("withingsSynkBtn");
+  const tekst = $("withingsStatusTekst");
+  synkBtn.disabled = true;
+  tekst.textContent = "Synkroniserer …";
+  const res = await fetch("/api/withings/synk", { method: "POST" });
+  const data = await res.json();
+  synkBtn.disabled = false;
+  if (!res.ok) {
+    tekst.textContent = `Kunne ikke synkronisere: ${data.error || "ukjent feil"}`;
+    return;
+  }
+  await lastWithingsStatus();
+  if (data.nye > 0) lastVekt();
+}
+
 // ---- Historikk ----
 
 async function lastHistorikk() {
@@ -634,6 +674,7 @@ function main() {
     btn.addEventListener("click", () => settGjennomfortValg(btn.dataset.val));
   });
   $("vektForm").addEventListener("submit", leggTilVekt);
+  $("withingsSynkBtn").addEventListener("click", synkroniserWithings);
   $("nyFysioBtn").addEventListener("click", () => apneFysioModal(null));
   $("fysioForm").addEventListener("submit", lagreFysio);
   $("fysioCancelBtn").addEventListener("click", lukkFysioModal);
