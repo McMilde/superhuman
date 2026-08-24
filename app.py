@@ -21,6 +21,10 @@ APP_PASSORD = os.environ.get("APP_PASSORD")
 # beskyttes i stedet med en lang kode i selve lenken.
 VARSEL_NOKKEL = os.environ.get("VARSEL_NOKKEL")
 
+# For automatisk henting av vekt fra Withings-vekten (satt opp i developer.withings.com).
+WITHINGS_CLIENT_ID = os.environ.get("WITHINGS_CLIENT_ID")
+WITHINGS_CLIENT_SECRET = os.environ.get("WITHINGS_CLIENT_SECRET")
+
 UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
 
 app = Flask(__name__)
@@ -34,7 +38,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 def krev_innlogging():
     if not APP_PASSORD:
         return
-    if request.endpoint in ("login", "static", "api_varsel"):
+    if request.endpoint in ("login", "static", "api_varsel", "withings_callback"):
         return
     if not session.get("innlogget"):
         return redirect(url_for("login"))
@@ -667,6 +671,17 @@ def api_varsel():
         tekst = f"Husk å logge treningen din i dag: {mal['tittel']} – {kort_beskrivelse}"
 
     return Response(tekst, mimetype="text/plain")
+
+
+# ---- Withings (automatisk henting av vekt) ----
+
+@app.route("/withings/callback")
+def withings_callback():
+    """Withings sender brukeren hit etter innlogging/godkjenning på deres side."""
+    code = request.args.get("code")
+    if not code:
+        return Response("Withings-tilkoblingen er klar til bruk.", mimetype="text/plain")
+    return Response("Withings-koden ble mottatt. Kobler til i neste steg.", mimetype="text/plain")
 
 
 @app.route("/api/uke")
