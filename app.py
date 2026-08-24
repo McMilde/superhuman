@@ -632,7 +632,13 @@ def api_dag():
 def api_varsel():
     """Ren tekst beregnet på f.eks. iPhonens Snarveier-app, til bruk i et daglig varsel."""
     dato_obj = date.today()
+    dato_str = dato_obj.isoformat()
     db = get_db()
+
+    logg_row = db.execute("SELECT * FROM dagslogg WHERE dato = ?", (dato_str,)).fetchone()
+    if logg_row is not None:
+        return Response("Bra jobbet, du har allerede logget i dag! 💪", mimetype="text/plain")
+
     start_dato = date.fromisoformat(
         db.execute("SELECT start_dato FROM innstillinger WHERE id = 1").fetchone()["start_dato"]
     )
@@ -640,12 +646,12 @@ def api_varsel():
     mal = hent_mal(uke_nummer, ukedag)
 
     if mal is None:
-        tekst = "Husk å trene i dag! Åpne appen for detaljer."
+        tekst = "Husk å logge treningen din i dag! Åpne appen for detaljer."
     elif mal["type"] == "hvile":
-        tekst = "Hviledag i dag. Nyt den!"
+        tekst = "Hviledag i dag – husk å logg den likevel, så telles den med i oversikten."
     else:
         kort_beskrivelse = mal["beskrivelse"].split("\n")[0].lstrip("- ").strip()
-        tekst = f"Husk å trene i dag: {mal['tittel']} – {kort_beskrivelse}"
+        tekst = f"Husk å logge treningen din i dag: {mal['tittel']} – {kort_beskrivelse}"
 
     return Response(tekst, mimetype="text/plain")
 
