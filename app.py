@@ -426,6 +426,13 @@ def init_db():
             "INSERT INTO innstillinger (id, start_dato) VALUES (1, ?)",
             (start_dato,),
         )
+    innstillinger_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(innstillinger)")}
+    if "withings_pending_state" not in innstillinger_kolonner:
+        # Brukes av /withings/connect + /withings/callback for å bekrefte at
+        # innloggingen faktisk kom fra oss (CSRF-beskyttelse). Lagres i databasen
+        # i stedet for i sesjons-cookien, fordi iPhonens hjemskjerm-app ikke
+        # pålitelig beholder samme cookie gjennom turen til Withings og tilbake.
+        conn.execute("ALTER TABLE innstillinger ADD COLUMN withings_pending_state TEXT")
 
     conn.execute(
         """
@@ -860,7 +867,9 @@ def withings_synk():
 def withings_connect():
     """Sender brukeren til Withings for å logge inn og godkjenne tilgang."""
     state = secrets.token_urlsafe(24)
-    session["withings_state"] = state
+    db = get_db()
+    db.execute("UPDATE innstillinger SET withings_pending_state = ? WHERE id = 1", (state,))
+    db.commit()
     parametre = {
         "response_type": "code",
         "client_id": WITHINGS_CLIENT_ID,
@@ -878,7 +887,13 @@ def withings_callback():
     if not code:
         return Response("Withings-tilkoblingen er klar til bruk.", mimetype="text/plain")
 
-    if request.args.get("state") != session.get("withings_state"):
+    db = get_db()
+    rad = db.execute("SELECT withings_pending_state FROM innstillinger WHERE id = 1").fetchone()
+    ventet_state = rad["withings_pending_state"] if rad else None
+    db.execute("UPDATE innstillinger SET withings_pending_state = NULL WHERE id = 1")
+    db.commit()
+
+    if not ventet_state or request.args.get("state") != ventet_state:
         return Response("Ugyldig forespørsel (feil state). Prøv å koble til på nytt.", status=400, mimetype="text/plain")
 
     feil = withings_hent_og_lagre_token(
