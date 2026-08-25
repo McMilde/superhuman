@@ -184,6 +184,7 @@ function settOppFaner() {
       if (btn.dataset.tab === "hendelser") lastHendelser();
       if (btn.dataset.tab === "vekt") lastVekt();
       if (btn.dataset.tab === "withings") { lastWithingsStatus(); lastWithingsData(); }
+      if (btn.dataset.tab === "oura") { lastOuraStatus(); lastOuraData(); }
       if (btn.dataset.tab === "historikk") lastHistorikk();
     });
   });
@@ -649,6 +650,77 @@ async function synkroniserWithings() {
   if (data.nye > 0) lastVekt();
 }
 
+// ---- Oura ----
+
+async function lastOuraStatus() {
+  const boks = $("ouraBoks");
+  const tekst = $("ouraStatusTekst");
+  const kobleBtn = $("ouraKobleBtn");
+  const synkBtn = $("ouraSynkBtn");
+
+  const res = await fetch("/api/oura/status");
+  const data = await res.json();
+  boks.classList.remove("hidden");
+
+  if (!data.tilkoblet) {
+    tekst.textContent = "Ikke koblet til Oura ennå.";
+    kobleBtn.classList.remove("hidden");
+    synkBtn.classList.add("hidden");
+    return;
+  }
+
+  kobleBtn.classList.add("hidden");
+  synkBtn.classList.remove("hidden");
+  tekst.textContent = data.sist_synket
+    ? `Koblet til Oura. Sist synket: ${new Date(data.sist_synket).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "short" })}`
+    : "Koblet til Oura.";
+}
+
+async function lastOuraData() {
+  const res = await fetch("/api/oura/data");
+  const data = await res.json();
+  const liste = $("ouraDataListe");
+
+  if (data.length === 0) {
+    liste.innerHTML = `<li class="tom">Ingen data fra Oura ennå.</li>`;
+    return;
+  }
+
+  liste.innerHTML = data
+    .map((d) => {
+      const badges = d.malinger
+        .map(
+          (m) =>
+            `<span class="badge">${escapeHtml(m.navn)}: ${m.verdi.toString().replace(".", ",")}${m.enhet ? " " + escapeHtml(m.enhet) : ""}</span>`
+        )
+        .join("");
+      return `
+        <li class="historikk-rad">
+          <div class="historikk-rad-header">
+            <span class="historikk-dato">${formaterDato(d.dato)}</span>
+          </div>
+          <div class="historikk-badges">${badges}</div>
+        </li>`;
+    })
+    .join("");
+}
+
+async function synkroniserOura() {
+  const synkBtn = $("ouraSynkBtn");
+  const tekst = $("ouraStatusTekst");
+  synkBtn.disabled = true;
+  tekst.textContent = "Synkroniserer …";
+  const res = await fetch("/api/oura/synk", { method: "POST" });
+  const data = await res.json();
+  synkBtn.disabled = false;
+  if (!res.ok) {
+    tekst.textContent = `Kunne ikke synkronisere: ${data.error || "ukjent feil"}`;
+    return;
+  }
+  await lastOuraStatus();
+  await lastOuraData();
+}
+
 // ---- Historikk ----
 
 async function lastHistorikk() {
@@ -706,6 +778,7 @@ function main() {
   });
   $("vektForm").addEventListener("submit", leggTilVekt);
   $("withingsSynkBtn").addEventListener("click", synkroniserWithings);
+  $("ouraSynkBtn").addEventListener("click", synkroniserOura);
   $("nyFysioBtn").addEventListener("click", () => apneFysioModal(null));
   $("fysioForm").addEventListener("submit", lagreFysio);
   $("fysioCancelBtn").addEventListener("click", lukkFysioModal);

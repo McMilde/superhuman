@@ -41,6 +41,22 @@ WITHINGS_MALETYPER = {
     11: ("Puls", "bpm"),
 }
 
+# For automatisk henting av søvn/aktivitet/restitusjon fra Oura-ringen
+# (satt opp i cloud.ouraring.com/oauth/applications).
+OURA_CLIENT_ID = os.environ.get("OURA_CLIENT_ID")
+OURA_CLIENT_SECRET = os.environ.get("OURA_CLIENT_SECRET")
+OURA_REDIRECT_URI = "https://trening.flibber.no/oura/callback"
+
+# Ouras daglige poengsummer (0-100) og noen få nøkkeltall - samme (navn, enhet)-
+# form som WITHINGS_MALETYPER over, men med tekst-nøkler siden Oura ikke har
+# tallkoder for målingene sine slik Withings har.
+OURA_MALETYPER = {
+    "sovn_score": ("Søvn-poengsum", ""),
+    "restitusjon_score": ("Restitusjon-poengsum", ""),
+    "aktivitet_score": ("Aktivitet-poengsum", ""),
+    "skritt": ("Skritt", ""),
+}
+
 UKEDAGER = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
 
 app = Flask(__name__)
@@ -54,7 +70,11 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 def krev_innlogging():
     if not APP_PASSORD:
         return
-    if request.endpoint in ("login", "static", "api_varsel", "withings_callback", "api_withings_synk_automatisk"):
+    if request.endpoint in (
+        "login", "static", "api_varsel",
+        "withings_callback", "api_withings_synk_automatisk",
+        "oura_callback", "api_oura_synk_automatisk",
+    ):
         return
     if not session.get("innlogget"):
         return redirect(url_for("login"))
@@ -433,6 +453,9 @@ def init_db():
         # i stedet for i sesjons-cookien, fordi iPhonens hjemskjerm-app ikke
         # pålitelig beholder samme cookie gjennom turen til Withings og tilbake.
         conn.execute("ALTER TABLE innstillinger ADD COLUMN withings_pending_state TEXT")
+    if "oura_pending_state" not in innstillinger_kolonner:
+        # Samme mønster/begrunnelse som withings_pending_state over, for Oura-tilkoblingen.
+        conn.execute("ALTER TABLE innstillinger ADD COLUMN oura_pending_state TEXT")
 
     conn.execute(
         """
@@ -584,6 +607,33 @@ def init_db():
             type INTEGER NOT NULL,
             verdi REAL NOT NULL,
             UNIQUE(grpid, type)
+        )
+        """
+    )
+
+    # Samme mønster som withings_konto/withings_malinger over, for Oura-ringen.
+    # siste_dag_synket brukes som start_date i neste synk (Ouras API er
+    # dato-basert, ikke epoch-basert som Withings sin).
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS oura_konto (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            utloper TEXT NOT NULL,
+            siste_dag_synket TEXT,
+            sist_synket TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS oura_malinger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dato TEXT NOT NULL,
+            type TEXT NOT NULL,
+            verdi REAL NOT NULL,
+            UNIQUE(dato, type)
         )
         """
     )
@@ -951,6 +1001,220 @@ def api_withings_synk_automatisk():
     if feil:
         return Response(f"Withings-synk feilet: {feil}", status=502, mimetype="text/plain")
     return Response(f"Withings synkronisert: {antall} nye målinger.", mimetype="text/plain")
+
+
+# ---- Oura (automatisk henting av søvn/restitusjon/aktivitet) ----
+
+def oura_hent_og_lagre_token(**felter):
+    """Henter access/refresh-token fra Oura (enten med en engangskode fra
+    innlogging, eller med et refresh_token) og lagrer resultatet. Returnerer
+    en feiltekst hvis noe gikk galt, ellers None."""
+    try:
+        svar = requests.post(
+            "https://api.ouraring.com/oauth/token",
+            data=felter,
+            auth=(OURA_CLIENT_ID, OURA_CLIENT_SECRET),
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        return str(e)
+
+    if svar.status_code != 200:
+        return f"Oura-feil ({svar.status_code}): {svar.text[:200]}"
+
+    kropp = svar.json()
+    utloper = (datetime.now(timezone.utc) + timedelta(seconds=int(kropp["expires_in"]) - 60)).isoformat()
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO oura_konto (id, access_token, refresh_token, utloper)
+        VALUES (1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            utloper = excluded.utloper
+        """,
+        (kropp["access_token"], kropp["refresh_token"], utloper),
+    )
+    db.commit()
+    return None
+
+
+def oura_hent_gyldig_token():
+    """Returnerer (access_token, None) eller (None, feiltekst). Fornyer selv
+    tilgangen via refresh_token når den er i ferd med å gå ut."""
+    db = get_db()
+    rad = db.execute("SELECT * FROM oura_konto WHERE id = 1").fetchone()
+    if rad is None:
+        return None, "ikke_tilkoblet"
+
+    if datetime.now(timezone.utc) < datetime.fromisoformat(rad["utloper"]):
+        return rad["access_token"], None
+
+    feil = oura_hent_og_lagre_token(grant_type="refresh_token", refresh_token=rad["refresh_token"])
+    if feil:
+        return None, feil
+
+    rad = db.execute("SELECT access_token FROM oura_konto WHERE id = 1").fetchone()
+    return rad["access_token"], None
+
+
+def oura_synk():
+    """Henter nye dagssammendrag (søvn-, restitusjon- og aktivitet-poengsum,
+    pluss skritt) fra Oura og lagrer dem i oura_malinger.
+    Returnerer (antall, None) eller (None, feiltekst)."""
+    access_token, feil = oura_hent_gyldig_token()
+    if feil:
+        return None, feil
+
+    db = get_db()
+    rad = db.execute("SELECT siste_dag_synket FROM oura_konto WHERE id = 1").fetchone()
+    start_dato = rad["siste_dag_synket"] or (date.today() - timedelta(days=7)).isoformat()
+    slutt_dato = date.today().isoformat()
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    parametre = {"start_date": start_dato, "end_date": slutt_dato}
+
+    antall_nye = 0
+    nyeste_dag = start_dato
+
+    for sti, type_navn in (
+        ("daily_sleep", "sovn_score"),
+        ("daily_readiness", "restitusjon_score"),
+        ("daily_activity", "aktivitet_score"),
+    ):
+        try:
+            svar = requests.get(
+                f"https://api.ouraring.com/v2/usercollection/{sti}",
+                params=parametre,
+                headers=headers,
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            return None, str(e)
+
+        if svar.status_code != 200:
+            return None, f"Oura-feil ({svar.status_code}) på {sti}: {svar.text[:200]}"
+
+        for rad_data in svar.json().get("data", []):
+            dag = rad_data.get("day")
+            score = rad_data.get("score")
+            if dag is None or score is None:
+                continue
+            nyeste_dag = max(nyeste_dag, dag)
+
+            db.execute(
+                "INSERT INTO oura_malinger (dato, type, verdi) VALUES (?, ?, ?) "
+                "ON CONFLICT(dato, type) DO UPDATE SET verdi = excluded.verdi",
+                (dag, type_navn, score),
+            )
+            antall_nye += 1
+
+            if sti == "daily_activity" and rad_data.get("steps") is not None:
+                db.execute(
+                    "INSERT INTO oura_malinger (dato, type, verdi) VALUES (?, 'skritt', ?) "
+                    "ON CONFLICT(dato, type) DO UPDATE SET verdi = excluded.verdi",
+                    (dag, rad_data["steps"]),
+                )
+                antall_nye += 1
+
+    db.execute(
+        "UPDATE oura_konto SET siste_dag_synket = ?, sist_synket = ? WHERE id = 1",
+        (nyeste_dag, datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+    return antall_nye, None
+
+
+@app.route("/oura/connect")
+def oura_connect():
+    """Sender brukeren til Oura for å logge inn og godkjenne tilgang."""
+    state = secrets.token_urlsafe(24)
+    db = get_db()
+    db.execute("UPDATE innstillinger SET oura_pending_state = ? WHERE id = 1", (state,))
+    db.commit()
+    parametre = {
+        "response_type": "code",
+        "client_id": OURA_CLIENT_ID,
+        "redirect_uri": OURA_REDIRECT_URI,
+        "scope": "daily",
+        "state": state,
+    }
+    return redirect("https://cloud.ouraring.com/oauth/authorize?" + urlencode(parametre))
+
+
+@app.route("/oura/callback")
+def oura_callback():
+    """Oura sender brukeren hit etter innlogging/godkjenning på deres side."""
+    code = request.args.get("code")
+    if not code:
+        return Response("Oura-tilkoblingen er klar til bruk.", mimetype="text/plain")
+
+    db = get_db()
+    rad = db.execute("SELECT oura_pending_state FROM innstillinger WHERE id = 1").fetchone()
+    ventet_state = rad["oura_pending_state"] if rad else None
+    db.execute("UPDATE innstillinger SET oura_pending_state = NULL WHERE id = 1")
+    db.commit()
+
+    if not ventet_state or request.args.get("state") != ventet_state:
+        return Response("Ugyldig forespørsel (feil state). Prøv å koble til på nytt.", status=400, mimetype="text/plain")
+
+    feil = oura_hent_og_lagre_token(
+        grant_type="authorization_code", code=code, redirect_uri=OURA_REDIRECT_URI
+    )
+    if feil:
+        return Response(f"Noe gikk galt ved tilkobling til Oura: {feil}", status=502, mimetype="text/plain")
+
+    oura_synk()
+    return redirect(url_for("index"))
+
+
+@app.route("/api/oura/status")
+def api_oura_status():
+    db = get_db()
+    rad = db.execute("SELECT sist_synket FROM oura_konto WHERE id = 1").fetchone()
+    return jsonify({"tilkoblet": rad is not None, "sist_synket": rad["sist_synket"] if rad else None})
+
+
+@app.route("/api/oura/data")
+def api_oura_data():
+    db = get_db()
+    rader = db.execute(
+        "SELECT dato, type, verdi FROM oura_malinger ORDER BY dato DESC, type"
+    ).fetchall()
+
+    dager = {}
+    for r in rader:
+        navn, enhet = OURA_MALETYPER.get(r["type"], (r["type"], ""))
+        dager.setdefault(r["dato"], []).append({"navn": navn, "verdi": r["verdi"], "enhet": enhet})
+
+    return jsonify([{"dato": dato, "malinger": malinger} for dato, malinger in dager.items()])
+
+
+@app.route("/api/oura/synk", methods=["POST"])
+def api_oura_synk():
+    antall, feil = oura_synk()
+    if feil == "ikke_tilkoblet":
+        return jsonify({"error": "Ikke koblet til Oura ennå."}), 400
+    if feil:
+        return jsonify({"error": feil}), 502
+    return jsonify({"nye": antall})
+
+
+@app.route("/api/oura/synk-automatisk")
+def api_oura_synk_automatisk():
+    """Beregnet på en egen daglig Snarveier-automatisering, samme
+    kode-beskyttelse som /api/varsel og /api/withings/synk-automatisk."""
+    if VARSEL_NOKKEL and request.args.get("kode") != VARSEL_NOKKEL:
+        return Response("Feil eller manglende kode.", status=403, mimetype="text/plain")
+
+    antall, feil = oura_synk()
+    if feil == "ikke_tilkoblet":
+        return Response("Ikke koblet til Oura ennå.", mimetype="text/plain")
+    if feil:
+        return Response(f"Oura-synk feilet: {feil}", status=502, mimetype="text/plain")
+    return Response(f"Oura synkronisert: {antall} nye målinger.", mimetype="text/plain")
 
 
 @app.route("/api/uke")
