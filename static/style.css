@@ -11,6 +11,8 @@
   --danger-soft: #fbe9e7;
   --warn: #b8860b;
   --warn-soft: #f4e9d8;
+  --annet: #7c3aed;
+  --annet-soft: #ede8fd;
   --muted-soft: #eef0f2;
   --shadow: 0 1px 3px rgba(20, 40, 35, 0.06), 0 1px 2px rgba(20, 40, 35, 0.04);
   --metrikk-vekt: #0f9169;
@@ -33,6 +35,8 @@
     --danger-soft: #3a201d;
     --warn: #e0b34d;
     --warn-soft: #362d19;
+    --annet: #b794f6;
+    --annet-soft: #2b2144;
     --muted-soft: #232f2a;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
     --metrikk-vekt: #1f9e78;
@@ -217,40 +221,6 @@ main {
 
 .ovelse-chip:active { background: var(--accent-soft); transform: scale(0.96); }
 
-.hendelser-tittel {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
-  margin: 12px 0 6px;
-}
-
-.toggle-chip-liste {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.toggle-chip {
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--accent-dark);
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  padding: 10px 16px;
-  min-height: 40px;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.toggle-chip:active { transform: scale(0.96); }
-
-.toggle-chip.valgt {
-  background: var(--accent);
-  color: white;
-}
-
 .ovelse-illustrasjon {
   display: flex;
   justify-content: center;
@@ -370,6 +340,22 @@ form textarea {
   border-color: var(--danger);
   color: var(--danger);
 }
+
+.segment-annet.aktiv {
+  background: var(--annet-soft);
+  border-color: var(--annet);
+  color: var(--annet);
+}
+
+.toggle-3 .segment {
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.toggle-3 .segment svg { width: 17px; height: 17px; }
 
 .toggle-row {
   display: flex;
@@ -513,6 +499,7 @@ form textarea {
 .status-ferdig { background: var(--accent-soft); color: var(--accent-dark); }
 .status-uferdig { background: var(--warn-soft); color: var(--warn); }
 .status-hvile { background: var(--muted-soft); color: var(--muted); }
+.status-annet { background: var(--annet-soft); color: var(--annet); }
 
 /* Fysio */
 
@@ -792,10 +779,11 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 .oversikt-kort-titler { flex: 1; min-width: 0; }
 .oversikt-kort-titler h3 { margin: 0; font-size: 14px; color: var(--text); }
 
-.oversikt-kort-sekundaer {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--muted);
+.oversikt-kort-sekundaer-rad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
 }
 
 .oversikt-kort-verdi-blokk {

@@ -1,4 +1,3 @@
-import json
 import os
 import secrets
 import socket
@@ -477,7 +476,7 @@ def init_db():
     # okt_mal er ren plandata (ikke noe brukeren har lagt inn selv) - den slettes
     # og bygges på nytt fra OKT_MAL hver gang appen starter, slik at endringer i
     # selve treningsplanen alltid slår igjennom. Påvirker ikke
-    # dagslogg/vektlogg/fysio_ovelser/hendelse_typer/styrke_logg.
+    # dagslogg/vektlogg/fysio_ovelser/styrke_logg.
     conn.execute("DROP TABLE IF EXISTS okt_mal")
     conn.execute(
         """
@@ -511,26 +510,6 @@ def init_db():
 
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS hendelse_typer (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            navn TEXT NOT NULL,
-            aktiv INTEGER NOT NULL DEFAULT 1,
-            pauser_plan INTEGER NOT NULL DEFAULT 0,
-            opprettet TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-        )
-        """
-    )
-    hendelse_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(hendelse_typer)")}
-    if "pauser_plan" not in hendelse_kolonner:
-        conn.execute("ALTER TABLE hendelse_typer ADD COLUMN pauser_plan INTEGER NOT NULL DEFAULT 0")
-    if conn.execute("SELECT COUNT(*) AS n FROM hendelse_typer").fetchone()["n"] == 0:
-        conn.executemany(
-            "INSERT INTO hendelse_typer (navn, pauser_plan) VALUES (?, ?)",
-            [("Alkohol", 0), ("Syk", 1)],
-        )
-
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS styrke_logg (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             dato TEXT NOT NULL,
@@ -550,15 +529,18 @@ def init_db():
             dato TEXT NOT NULL UNIQUE,
             gjennomfort INTEGER NOT NULL DEFAULT 0,
             fysio_gjort INTEGER NOT NULL DEFAULT 0,
-            hendelser TEXT NOT NULL DEFAULT '[]',
             notater TEXT NOT NULL DEFAULT '',
             oppdatert TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         )
         """
     )
     dagslogg_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(dagslogg)")}
-    if "hendelser" not in dagslogg_kolonner:
-        conn.execute("ALTER TABLE dagslogg ADD COLUMN hendelser TEXT NOT NULL DEFAULT '[]'")
+    if "annen_treningsform" not in dagslogg_kolonner:
+        conn.execute("ALTER TABLE dagslogg ADD COLUMN annen_treningsform INTEGER NOT NULL DEFAULT 0")
+    if "treningsform_begrunnelse" not in dagslogg_kolonner:
+        conn.execute("ALTER TABLE dagslogg ADD COLUMN treningsform_begrunnelse TEXT NOT NULL DEFAULT ''")
+    if "ikke_gjennomfort_begrunnelse" not in dagslogg_kolonner:
+        conn.execute("ALTER TABLE dagslogg ADD COLUMN ikke_gjennomfort_begrunnelse TEXT NOT NULL DEFAULT ''")
 
     conn.execute(
         """
@@ -681,33 +663,9 @@ def hent_aktive_fysio():
     return [dict(r) for r in rows]
 
 
-def hent_aktive_hendelse_typer():
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM hendelse_typer WHERE aktiv = 1 ORDER BY id"
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def tell_pausedager(db, start_dato, til_dato):
-    """Antall dager mellom start_dato og til_dato (ekskl.) hvor en hendelse som
-    'pauser planen' (f.eks. sykdom) ble registrert - disse teller ikke med i
-    ukeberegningen, slik at planen venter på deg i stedet for å marsjere videre."""
-    pause_ider = {row["id"] for row in db.execute("SELECT id FROM hendelse_typer WHERE pauser_plan = 1")}
-    if not pause_ider:
-        return 0
-    rows = db.execute(
-        "SELECT hendelser FROM dagslogg WHERE dato >= ? AND dato < ?",
-        (start_dato.isoformat(), til_dato.isoformat()),
-    ).fetchall()
-    return sum(1 for row in rows if pause_ider.intersection(json.loads(row["hendelser"])))
-
-
-def uke_og_dag(db, dato_obj, start_dato):
+def uke_og_dag(dato_obj, start_dato):
     dager_siden_start = (dato_obj - start_dato).days
-    pausedager = tell_pausedager(db, start_dato, dato_obj)
-    effektive_dager = max(0, dager_siden_start - pausedager)
-    uke_nummer = max(1, effektive_dager // 7 + 1)
+    uke_nummer = max(1, dager_siden_start // 7 + 1)
     ukedag = dato_obj.isoweekday()  # 1 = mandag ... 7 = søndag
     return uke_nummer, ukedag
 
@@ -732,14 +690,14 @@ def api_dag():
         db.execute("SELECT start_dato FROM innstillinger WHERE id = 1").fetchone()["start_dato"]
     )
 
-    uke_nummer, ukedag = uke_og_dag(db, dato_obj, start_dato)
+    uke_nummer, ukedag = uke_og_dag(dato_obj, start_dato)
     fase = hent_fase(uke_nummer)
     mal = hent_mal(uke_nummer, ukedag)
 
     logg_row = db.execute("SELECT * FROM dagslogg WHERE dato = ?", (dato_str,)).fetchone()
     logg = dict(logg_row) if logg_row else None
     if logg is not None:
-        logg["hendelser"] = json.loads(logg["hendelser"])
+        logg.pop("hendelser", None)
 
     return jsonify({
         "dato": dato_str,
@@ -748,7 +706,6 @@ def api_dag():
         "fase": fase,
         "okt": mal,
         "fysio_ovelser": hent_aktive_fysio(),
-        "hendelse_typer": hent_aktive_hendelse_typer(),
         "logg": logg,
         "sitat": dagens_sitat(dato_obj),
     })
@@ -779,7 +736,7 @@ def api_varsel():
     start_dato = date.fromisoformat(
         db.execute("SELECT start_dato FROM innstillinger WHERE id = 1").fetchone()["start_dato"]
     )
-    uke_nummer, ukedag = uke_og_dag(db, dato_obj, start_dato)
+    uke_nummer, ukedag = uke_og_dag(dato_obj, start_dato)
     mal = hent_mal(uke_nummer, ukedag)
 
     if mal is None:
@@ -1247,9 +1204,6 @@ def api_oversikt():
     vekt_rader = hent(
         "SELECT dato, vekt_kg AS verdi FROM vektlogg WHERE dato >= ? ORDER BY dato", fra_dato
     )
-    fett_rader = hent(
-        "SELECT dato, verdi FROM withings_malinger WHERE type = 6 AND dato >= ? ORDER BY dato", fra_dato
-    )
     sovn_rader = hent(
         "SELECT dato, verdi FROM oura_malinger WHERE type = 'sovn_score' AND dato >= ? ORDER BY dato", fra_dato
     )
@@ -1267,12 +1221,32 @@ def api_oversikt():
         _, siste, _, _ = _serie_og_delta(rader, desimaler)
         return {"navn": navn, "enhet": enhet, "verdi": siste} if siste is not None else None
 
+    # Alle Withings-målinger utenom selve vekten (type 1) vises som ekstra
+    # nøkkeltall under Vekt-kortet, siden Eivin vil se alt Withings-vekten
+    # sender - ikke bare fettprosent.
+    withings_sekundaer = []
+    for type_id, (navn, enhet) in WITHINGS_MALETYPER.items():
+        if type_id == 1:
+            continue
+        rader = hent(
+            "SELECT dato, verdi FROM withings_malinger WHERE type = ? AND dato >= ? ORDER BY dato",
+            type_id, fra_dato,
+        )
+        verdi = sekundaer_verdi(rader, navn, enhet, 1)
+        if verdi:
+            withings_sekundaer.append(verdi)
+
+    aktivitet_sekundaer = []
+    skritt_verdi = sekundaer_verdi(skritt_rader, "Skritt", "", 0)
+    if skritt_verdi:
+        aktivitet_sekundaer.append(skritt_verdi)
+
     kort = []
     for id_, navn, enhet, desimaler, rader, sekundaer in (
-        ("vekt", "Vekt", "kg", 1, vekt_rader, sekundaer_verdi(fett_rader, "Fettprosent", "%", 1)),
-        ("sovn", "Søvn", "", 0, sovn_rader, None),
-        ("restitusjon", "Restitusjon", "", 0, restitusjon_rader, None),
-        ("aktivitet", "Aktivitet", "", 0, aktivitet_rader, sekundaer_verdi(skritt_rader, "Skritt", "", 0)),
+        ("vekt", "Vekt", "kg", 1, vekt_rader, withings_sekundaer),
+        ("sovn", "Søvn", "", 0, sovn_rader, []),
+        ("restitusjon", "Restitusjon", "", 0, restitusjon_rader, []),
+        ("aktivitet", "Aktivitet", "", 0, aktivitet_rader, aktivitet_sekundaer),
     ):
         serie, siste, siste_dato, delta = _serie_og_delta(rader, desimaler)
         kort.append({
@@ -1323,7 +1297,7 @@ def api_uke():
     for i in range(7):
         d = mandag + timedelta(days=i)
         d_str = d.isoformat()
-        uke_nummer, ukedag = uke_og_dag(db, d, start_dato)
+        uke_nummer, ukedag = uke_og_dag(d, start_dato)
         mal = hent_mal(uke_nummer, ukedag)
         logg_row = db.execute("SELECT * FROM dagslogg WHERE dato = ?", (d_str,)).fetchone()
         dager.append({
@@ -1343,28 +1317,35 @@ def api_lagre_dagslogg():
     dato_str = data.get("dato") or date.today().isoformat()
     gjennomfort = 1 if data.get("gjennomfort") else 0
     fysio_gjort = 1 if data.get("fysio_gjort") else 0
-    hendelser = data.get("hendelser") or []
-    hendelser_json = json.dumps([int(h) for h in hendelser])
+    annen_treningsform = 1 if data.get("annen_treningsform") else 0
+    treningsform_begrunnelse = (data.get("treningsform_begrunnelse") or "").strip()
+    ikke_gjennomfort_begrunnelse = (data.get("ikke_gjennomfort_begrunnelse") or "").strip()
     notater = (data.get("notater") or "").strip()
 
     db = get_db()
     db.execute(
         """
-        INSERT INTO dagslogg (dato, gjennomfort, fysio_gjort, hendelser, notater)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO dagslogg (
+            dato, gjennomfort, fysio_gjort, annen_treningsform,
+            treningsform_begrunnelse, ikke_gjennomfort_begrunnelse, notater
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dato) DO UPDATE SET
             gjennomfort = excluded.gjennomfort,
             fysio_gjort = excluded.fysio_gjort,
-            hendelser = excluded.hendelser,
+            annen_treningsform = excluded.annen_treningsform,
+            treningsform_begrunnelse = excluded.treningsform_begrunnelse,
+            ikke_gjennomfort_begrunnelse = excluded.ikke_gjennomfort_begrunnelse,
             notater = excluded.notater,
             oppdatert = datetime('now', 'localtime')
         """,
-        (dato_str, gjennomfort, fysio_gjort, hendelser_json, notater),
+        (dato_str, gjennomfort, fysio_gjort, annen_treningsform,
+         treningsform_begrunnelse, ikke_gjennomfort_begrunnelse, notater),
     )
     db.commit()
     row = db.execute("SELECT * FROM dagslogg WHERE dato = ?", (dato_str,)).fetchone()
     resultat = dict(row)
-    resultat["hendelser"] = json.loads(resultat["hendelser"])
+    resultat.pop("hendelser", None)
     return jsonify(resultat)
 
 
@@ -1420,59 +1401,6 @@ def api_update_fysio(fysio_id):
 def api_delete_fysio(fysio_id):
     db = get_db()
     db.execute("DELETE FROM fysio_ovelser WHERE id = ?", (fysio_id,))
-    db.commit()
-    return "", 204
-
-
-# ---- Hendelser (alkohol, syk, osv.) ----
-
-@app.route("/api/hendelser", methods=["GET"])
-def api_list_hendelser():
-    db = get_db()
-    rows = db.execute("SELECT * FROM hendelse_typer ORDER BY aktiv DESC, id").fetchall()
-    return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/hendelser", methods=["POST"])
-def api_create_hendelse():
-    data = request.get_json(force=True)
-    navn = (data.get("navn") or "").strip()
-    if not navn:
-        return jsonify({"error": "Navn er påkrevd"}), 400
-    pauser_plan = 1 if data.get("pauser_plan") else 0
-
-    db = get_db()
-    cur = db.execute("INSERT INTO hendelse_typer (navn, pauser_plan) VALUES (?, ?)", (navn, pauser_plan))
-    db.commit()
-    row = db.execute("SELECT * FROM hendelse_typer WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return jsonify(dict(row)), 201
-
-
-@app.route("/api/hendelser/<int:hendelse_id>", methods=["PUT"])
-def api_update_hendelse(hendelse_id):
-    data = request.get_json(force=True)
-    db = get_db()
-    row = db.execute("SELECT * FROM hendelse_typer WHERE id = ?", (hendelse_id,)).fetchone()
-    if row is None:
-        return jsonify({"error": "Fant ikke hendelsestypen"}), 404
-
-    navn = (data.get("navn", row["navn"]) or "").strip() or row["navn"]
-    aktiv = 1 if data.get("aktiv", row["aktiv"]) else 0
-    pauser_plan = 1 if data.get("pauser_plan", row["pauser_plan"]) else 0
-
-    db.execute(
-        "UPDATE hendelse_typer SET navn = ?, aktiv = ?, pauser_plan = ? WHERE id = ?",
-        (navn, aktiv, pauser_plan, hendelse_id),
-    )
-    db.commit()
-    updated = db.execute("SELECT * FROM hendelse_typer WHERE id = ?", (hendelse_id,)).fetchone()
-    return jsonify(dict(updated))
-
-
-@app.route("/api/hendelser/<int:hendelse_id>", methods=["DELETE"])
-def api_delete_hendelse(hendelse_id):
-    db = get_db()
-    db.execute("DELETE FROM hendelse_typer WHERE id = ?", (hendelse_id,))
     db.commit()
     return "", 204
 
@@ -1543,20 +1471,14 @@ def api_historikk():
     start_dato = date.fromisoformat(
         db.execute("SELECT start_dato FROM innstillinger WHERE id = 1").fetchone()["start_dato"]
     )
-    hendelse_navn = {row["id"]: row["navn"] for row in db.execute("SELECT id, navn FROM hendelse_typer")}
 
     dager = []
-    hendelse_antall = {}
     for rad in rader:
         d = dict(rad)
-        hendelse_ider = json.loads(d["hendelser"])
-        d["hendelser"] = [{"id": hid, "navn": hendelse_navn.get(hid, "?")} for hid in hendelse_ider]
-        for hid in hendelse_ider:
-            navn = hendelse_navn.get(hid, "?")
-            hendelse_antall[navn] = hendelse_antall.get(navn, 0) + 1
+        d.pop("hendelser", None)
 
         dato_obj = date.fromisoformat(d["dato"])
-        uke_nummer, ukedag = uke_og_dag(db, dato_obj, start_dato)
+        uke_nummer, ukedag = uke_og_dag(dato_obj, start_dato)
         mal = hent_mal(uke_nummer, ukedag)
         d["okt_tittel"] = mal["tittel"] if mal else None
         d["ukedag_navn"] = UKEDAGER[ukedag - 1]
@@ -1571,7 +1493,6 @@ def api_historikk():
             "totalt_registrert": totalt,
             "gjennomfort_antall": gjennomfort_antall,
             "gjennomfort_prosent": round(100 * gjennomfort_antall / totalt) if totalt else 0,
-            "hendelse_antall": hendelse_antall,
         },
     })
 

@@ -181,7 +181,6 @@ function settOppFaner() {
       btn.classList.add("active");
       $(`tab-${btn.dataset.tab}`).classList.add("active");
       if (btn.dataset.tab === "fysio") lastFysio();
-      if (btn.dataset.tab === "hendelser") lastHendelser();
       if (btn.dataset.tab === "vekt") lastVekt();
       if (btn.dataset.tab === "oversikt") lastOversikt();
       if (btn.dataset.tab === "historikk") lastHistorikk();
@@ -218,17 +217,16 @@ async function lastDag() {
     fysioRow.classList.add("hidden");
   }
 
-  const hendelserBlokk = $("hendelserBlokk");
-  if (data.hendelse_typer.length > 0) {
-    hendelserBlokk.classList.remove("hidden");
-    const valgt = new Set((data.logg && data.logg.hendelser) || []);
-    renderToggleChips($("hendelserListe"), data.hendelse_typer, valgt);
-  } else {
-    hendelserBlokk.classList.add("hidden");
-  }
-
   const logg = data.logg;
-  settGjennomfortValg(logg ? (logg.gjennomfort ? "1" : "0") : "");
+  let status = "";
+  if (logg) {
+    if (logg.annen_treningsform) status = "annet";
+    else if (logg.gjennomfort) status = "gjennomfort";
+    else status = "ikke_gjennomfort";
+  }
+  settGjennomfortValg(status);
+  $("treningsformBegrunnelse").value = (logg && logg.treningsform_begrunnelse) || "";
+  $("ikkeGjennomfortBegrunnelse").value = (logg && logg.ikke_gjennomfort_begrunnelse) || "";
   $("fysioGjort").checked = !!(logg && logg.fysio_gjort);
   $("dagsloggNotater").value = (logg && logg.notater) || "";
 }
@@ -238,30 +236,20 @@ function settGjennomfortValg(verdi) {
   document.querySelectorAll("#gjennomfortToggle .segment").forEach((btn) => {
     btn.classList.toggle("aktiv", btn.dataset.val === verdi);
   });
-}
-
-function renderToggleChips(container, typer, valgteIder) {
-  container.innerHTML = typer
-    .map(
-      (t) =>
-        `<button type="button" class="toggle-chip ${valgteIder.has(t.id) ? "valgt" : ""}" data-id="${t.id}">${escapeHtml(t.navn)}</button>`
-    )
-    .join("");
-  container.querySelectorAll(".toggle-chip").forEach((btn) => {
-    btn.addEventListener("click", () => btn.classList.toggle("valgt"));
-  });
+  $("annenTreningsformBlokk").classList.toggle("hidden", verdi !== "annet");
+  $("ikkeGjennomfortBlokk").classList.toggle("hidden", verdi !== "ikke_gjennomfort");
 }
 
 async function lagreDagslogg(e) {
   e.preventDefault();
-  const valgteHendelser = Array.from($("hendelserListe").querySelectorAll(".toggle-chip.valgt")).map((btn) =>
-    Number(btn.dataset.id)
-  );
+  const valg = $("gjennomfort").value;
   const body = {
     dato: idagDato(),
-    gjennomfort: $("gjennomfort").value === "1",
+    gjennomfort: valg === "gjennomfort" || valg === "annet",
+    annen_treningsform: valg === "annet",
+    treningsform_begrunnelse: $("treningsformBegrunnelse").value,
+    ikke_gjennomfort_begrunnelse: $("ikkeGjennomfortBegrunnelse").value,
     fysio_gjort: $("fysioGjort").checked,
-    hendelser: valgteHendelser,
     notater: $("dagsloggNotater").value,
   };
   await fetch("/api/dagslogg", {
@@ -408,84 +396,6 @@ async function slettFysio() {
   await fetch(`/api/fysio/${id}`, { method: "DELETE" });
   lukkFysioModal();
   lastFysio();
-  lastDag();
-}
-
-// ---- Hendelser ----
-
-let hendelseCache = [];
-
-async function lastHendelser() {
-  const res = await fetch("/api/hendelser");
-  hendelseCache = await res.json();
-  const liste = $("hendelseListe");
-  if (hendelseCache.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen hendelsestyper lagt til ennå.</li>`;
-    return;
-  }
-  liste.innerHTML = hendelseCache
-    .map(
-      (h) => `
-      <li class="fysio-rad ${h.aktiv ? "" : "inaktiv"}" data-id="${h.id}">
-        <div><strong>${escapeHtml(h.navn)}</strong>${h.pauser_plan ? '<div class="fysio-beskrivelse">Pauser treningsplanen</div>' : ""}</div>
-        <span class="badge">${h.aktiv ? "Aktiv" : "Av"}</span>
-      </li>`
-    )
-    .join("");
-
-  liste.querySelectorAll(".fysio-rad").forEach((el) => {
-    el.addEventListener("click", () => apneHendelseModal(Number(el.dataset.id)));
-  });
-}
-
-function apneHendelseModal(id) {
-  const h = id ? hendelseCache.find((x) => x.id === id) : null;
-  $("hendelseModalTitle").textContent = h ? "Rediger hendelsestype" : "Ny hendelsestype";
-  $("hendelseId").value = h ? h.id : "";
-  $("hendelseNavn").value = h ? h.navn : "";
-  $("hendelseAktiv").checked = h ? !!h.aktiv : true;
-  $("hendelsePauserPlan").checked = h ? !!h.pauser_plan : false;
-  $("hendelseDeleteBtn").classList.toggle("hidden", !h);
-  $("hendelseModalOverlay").classList.remove("hidden");
-}
-
-function lukkHendelseModal() {
-  $("hendelseModalOverlay").classList.add("hidden");
-}
-
-async function lagreHendelse(e) {
-  e.preventDefault();
-  const id = $("hendelseId").value;
-  const body = {
-    navn: $("hendelseNavn").value,
-    aktiv: $("hendelseAktiv").checked,
-    pauser_plan: $("hendelsePauserPlan").checked,
-  };
-  if (id) {
-    await fetch(`/api/hendelser/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } else {
-    await fetch("/api/hendelser", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }
-  lukkHendelseModal();
-  lastHendelser();
-  lastDag();
-}
-
-async function slettHendelse() {
-  const id = $("hendelseId").value;
-  if (!id) return;
-  if (!confirm("Slette denne hendelsestypen?")) return;
-  await fetch(`/api/hendelser/${id}`, { method: "DELETE" });
-  lukkHendelseModal();
-  lastHendelser();
   lastDag();
 }
 
@@ -664,8 +574,13 @@ function renderOversiktKort(kortListe, tilkoblinger) {
         k.delta_7d == null || k.delta_7d === 0
           ? ""
           : `<span class="oversikt-kort-delta ${k.delta_7d > 0 ? "opp" : "ned"}">${k.delta_7d > 0 ? "↑" : "↓"} ${Math.abs(k.delta_7d).toFixed(desimaler).replace(".", ",")}${k.enhet}</span>`;
-      const sekundaerHtml = k.sekundaer
-        ? `<p class="oversikt-kort-sekundaer">${escapeHtml(k.sekundaer.navn)}: ${k.sekundaer.verdi.toString().replace(".", ",")}${k.sekundaer.enhet ? " " + escapeHtml(k.sekundaer.enhet) : ""}</p>`
+      const sekundaerHtml = k.sekundaer.length
+        ? `<div class="oversikt-kort-sekundaer-rad">${k.sekundaer
+            .map(
+              (s) =>
+                `<span class="badge">${escapeHtml(s.navn)}: ${s.verdi.toString().replace(".", ",")}${s.enhet ? " " + escapeHtml(s.enhet) : ""}</span>`
+            )
+            .join("")}</div>`
         : "";
 
       return `
@@ -674,13 +589,13 @@ function renderOversiktKort(kortListe, tilkoblinger) {
             <div class="oversikt-kort-ikon" style="color:var(${fargeVar})">${ikonSvg}</div>
             <div class="oversikt-kort-titler">
               <h3>${meta.navn}</h3>
-              ${sekundaerHtml}
             </div>
             <div class="oversikt-kort-verdi-blokk">
               <span class="oversikt-kort-verdi" data-til="${k.siste}" data-desimaler="${desimaler}">0</span><span class="oversikt-kort-enhet">${escapeHtml(k.enhet)}</span>
               ${deltaHtml}
             </div>
           </div>
+          ${sekundaerHtml}
           <div class="oversikt-graf-wrap">
             <div class="graf-tooltip"></div>
           </div>
@@ -864,13 +779,9 @@ async function lastHistorikk() {
 
   const statsWrap = $("historikkStats");
   const stats = data.stats;
-  const hendelseTiles = Object.entries(stats.hendelse_antall)
-    .map(([navn, antall]) => `<div class="stat-tile"><strong>${antall}</strong><span>${escapeHtml(navn)}</span></div>`)
-    .join("");
   statsWrap.innerHTML = `
     <div class="stat-tile"><strong>${stats.gjennomfort_prosent}%</strong><span>gjennomført</span></div>
     <div class="stat-tile"><strong>${stats.gjennomfort_antall}</strong><span>av ${stats.totalt_registrert} registrerte dager</span></div>
-    ${hendelseTiles}
   `;
 
   const liste = $("historikkListe");
@@ -880,15 +791,24 @@ async function lastHistorikk() {
   }
   liste.innerHTML = data.dager
     .map((d) => {
-      const hendelseBadges = d.hendelser.map((h) => `<span class="badge">${escapeHtml(h.navn)}</span>`).join("");
+      let statusKlasse = "status-uferdig";
+      let statusTekst = "Ikke gjennomført";
+      if (d.annen_treningsform) {
+        statusKlasse = "status-annet";
+        statusTekst = "Annen økt";
+      } else if (d.gjennomfort) {
+        statusKlasse = "status-ferdig";
+        statusTekst = "Gjennomført";
+      }
+      const begrunnelse = d.annen_treningsform ? d.treningsform_begrunnelse : d.ikke_gjennomfort_begrunnelse;
       return `
         <li class="historikk-rad">
           <div class="historikk-rad-header">
             <span class="historikk-dato">${formaterDato(d.dato)} · ${d.ukedag_navn}</span>
-            <span class="uke-dag-status ${d.gjennomfort ? "status-ferdig" : "status-uferdig"}">${d.gjennomfort ? "Gjennomført" : "Ikke gjennomført"}</span>
+            <span class="uke-dag-status ${statusKlasse}">${statusTekst}</span>
           </div>
           <div class="historikk-okt">${d.okt_tittel ? escapeHtml(d.okt_tittel) : ""}</div>
-          ${hendelseBadges ? `<div class="historikk-badges">${hendelseBadges}</div>` : ""}
+          ${begrunnelse ? `<div class="historikk-notater">${escapeHtml(begrunnelse)}</div>` : ""}
           ${d.notater ? `<div class="historikk-notater">${escapeHtml(d.notater)}</div>` : ""}
         </li>`;
     })
@@ -937,13 +857,6 @@ function main() {
     if (e.target.id === "dagModalOverlay") lukkDagModal();
   });
   $("ovelseModalLoggLagreBtn").addEventListener("click", lagreOvelseLogg);
-  $("nyHendelseBtn").addEventListener("click", () => apneHendelseModal(null));
-  $("hendelseForm").addEventListener("submit", lagreHendelse);
-  $("hendelseCancelBtn").addEventListener("click", lukkHendelseModal);
-  $("hendelseDeleteBtn").addEventListener("click", slettHendelse);
-  $("hendelseModalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "hendelseModalOverlay") lukkHendelseModal();
-  });
 
   lastDag();
   lastUke();

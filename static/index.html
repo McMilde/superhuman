@@ -30,21 +30,17 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
       <span>I dag</span>
     </button>
+    <button class="tab" data-tab="oversikt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
+      <span>Oversikt</span>
+    </button>
     <button class="tab" data-tab="fysio">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 6.6a4.8 4.8 0 0 0-7-4.4 4.8 4.8 0 0 0-7 4.4c0 3.6 3.6 6 7 9.4 3.4-3.4 7-5.8 7-9.4z"/></svg>
       <span>Fysio</span>
     </button>
-    <button class="tab" data-tab="hendelser">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V3"/><path d="M5 4h13l-2.5 4L18 12H5"/></svg>
-      <span>Hendelser</span>
-    </button>
     <button class="tab" data-tab="vekt">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v12"/><path d="M18 6v12"/><path d="M9 12h6"/><rect x="3" y="9" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/></svg>
       <span>Vekt</span>
-    </button>
-    <button class="tab" data-tab="oversikt">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
-      <span>Oversikt</span>
     </button>
     <button class="tab" data-tab="historikk">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg>
@@ -83,17 +79,32 @@
       <div class="card">
         <h2>Registrer dagen</h2>
         <form id="dagsloggForm">
-          <div class="segmented-toggle" id="gjennomfortToggle">
-            <button type="button" class="segment segment-ja" data-val="1">
+          <div class="segmented-toggle toggle-3" id="gjennomfortToggle">
+            <button type="button" class="segment segment-ja" data-val="gjennomfort">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
               Gjennomført
             </button>
-            <button type="button" class="segment segment-nei" data-val="0">
+            <button type="button" class="segment segment-annet" data-val="annet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              Annen økt
+            </button>
+            <button type="button" class="segment segment-nei" data-val="ikke_gjennomfort">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-              Ikke gjennomført
+              Ikke gjort
             </button>
           </div>
           <input type="hidden" id="gjennomfort" value="" />
+
+          <div id="annenTreningsformBlokk" class="hidden">
+            <label>Hva gjorde du i stedet, og hvorfor?
+              <textarea id="treningsformBegrunnelse" rows="2" placeholder="F.eks. Gikk en tur i stedet for å ro - godt vær ute"></textarea>
+            </label>
+          </div>
+          <div id="ikkeGjennomfortBlokk" class="hidden">
+            <label>Hvorfor ble ikke økten gjennomført?
+              <textarea id="ikkeGjennomfortBegrunnelse" rows="2" placeholder="F.eks. For lite tid, følte meg sliten, osv."></textarea>
+            </label>
+          </div>
 
           <label class="toggle-row" id="fysioGjortRow">
             <span>Jeg gjorde fysio-øvelsene</span>
@@ -102,10 +113,6 @@
               <span class="ios-switch-track"></span>
             </span>
           </label>
-          <div id="hendelserBlokk" class="hidden">
-            <p class="hendelser-tittel">Hendelser i dag</p>
-            <div id="hendelserListe" class="toggle-chip-liste"></div>
-          </div>
           <label>Notater (valgfritt)
             <textarea id="dagsloggNotater" rows="2" placeholder="F.eks. hvordan det føltes, vekt brukt på øvelser, osv."></textarea>
           </label>
@@ -122,16 +129,6 @@
         <p class="hint">Legg til øvelsene du får av fysioterapeuten her, så dukker de opp under "I dag" hver treningsdag. Skru av en øvelse i stedet for å slette den hvis du bare skal ta en pause fra den.</p>
         <ul id="fysioListe" class="fysio-liste"></ul>
         <button type="button" id="nyFysioBtn" class="btn primary">+ Legg til øvelse</button>
-      </div>
-    </section>
-
-    <!-- HENDELSER -->
-    <section id="tab-hendelser" class="tab-panel">
-      <div class="card">
-        <h2>Hendelsestyper</h2>
-        <p class="hint">Ting du vil kunne krysse av for i den daglige loggen, f.eks. alkohol eller sykdom. Skru av en type i stedet for å slette den hvis du bare vil slutte å bruke den midlertidig.</p>
-        <ul id="hendelseListe" class="fysio-liste"></ul>
-        <button type="button" id="nyHendelseBtn" class="btn primary">+ Legg til hendelsestype</button>
       </div>
     </section>
 
@@ -219,33 +216,6 @@
     </div>
   </div>
 
-  <div id="hendelseModalOverlay" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="hendelseModalTitle">Ny hendelsestype</h2>
-      </div>
-      <form id="hendelseForm">
-        <input type="hidden" id="hendelseId" />
-        <label>Navn <span class="pakrevd">— må fylles ut</span>
-          <input type="text" id="hendelseNavn" required placeholder="F.eks. Alkohol" />
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="hendelseAktiv" checked />
-          Aktiv (vises i den daglige loggen)
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="hendelsePauserPlan" />
-          Setter treningsplanen på pause den dagen (f.eks. sykdom) — ukeplanen venter da på deg i stedet for å telle den dagen med
-        </label>
-        <div class="modal-actions">
-          <button type="button" id="hendelseDeleteBtn" class="btn danger hidden">Slett</button>
-          <div class="spacer"></div>
-          <button type="button" id="hendelseCancelBtn" class="btn">Avbryt</button>
-          <button type="submit" class="btn primary">Lagre</button>
-        </div>
-      </form>
-    </div>
-  </div>
 
   <div id="dagModalOverlay" class="modal-overlay hidden">
     <div class="modal">
