@@ -42,13 +42,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v12"/><path d="M18 6v12"/><path d="M9 12h6"/><rect x="3" y="9" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/></svg>
       <span>Vekt</span>
     </button>
-    <button class="tab" data-tab="withings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a4.8 4.8 0 0 0-7 0L12 6.4l-1.8-1.8a4.8 4.8 0 0 0-7 6.6L12 20l8.8-8.8a4.8 4.8 0 0 0 0-6.6z"/><path d="M6 12h2.5l1.5-3 2 6 1.5-3H16"/></svg>
-      <span>Withings</span>
-    </button>
-    <button class="tab" data-tab="oura">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/></svg>
-      <span>Oura</span>
+    <button class="tab" data-tab="oversikt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
+      <span>Oversikt</span>
     </button>
     <button class="tab" data-tab="historikk">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg>
@@ -159,30 +155,28 @@
       </div>
     </section>
 
-    <!-- WITHINGS -->
-    <section id="tab-withings" class="tab-panel">
-      <div class="card">
-        <h2>Withings</h2>
-        <div id="withingsBoks" class="withings-boks hidden">
-          <p id="withingsStatusTekst" class="hint"></p>
-          <a id="withingsKobleBtn" href="/withings/connect" class="btn hidden">Koble til Withings</a>
-          <button type="button" id="withingsSynkBtn" class="btn hidden">Synkroniser nå</button>
+    <!-- OVERSIKT (samlet dashboard: vekt, søvn, restitusjon, aktivitet, trening) -->
+    <section id="tab-oversikt" class="tab-panel">
+      <div class="oversikt-topp">
+        <div class="segmented-toggle range-toggle" id="rangeToggle">
+          <button type="button" class="segment" data-dager="7">7d</button>
+          <button type="button" class="segment segment-valgt" data-dager="30">30d</button>
+          <button type="button" class="segment" data-dager="90">90d</button>
         </div>
-        <ul id="withingsDataListe" class="historikk-liste"></ul>
+        <button type="button" id="oversiktSynkBtn" class="ikon-knapp" title="Synkroniser Withings og Oura" aria-label="Synkroniser">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        </button>
       </div>
-    </section>
 
-    <!-- OURA -->
-    <section id="tab-oura" class="tab-panel">
-      <div class="card">
-        <h2>Oura</h2>
-        <div id="ouraBoks" class="withings-boks hidden">
-          <p id="ouraStatusTekst" class="hint"></p>
-          <a id="ouraKobleBtn" href="/oura/connect" class="btn hidden">Koble til Oura</a>
-          <button type="button" id="ouraSynkBtn" class="btn hidden">Synkroniser nå</button>
+      <div class="card trening-uke-card">
+        <div class="trening-uke-header">
+          <h2>Trening denne uken</h2>
+          <span id="treningUkeAntall" class="hint"></span>
         </div>
-        <ul id="ouraDataListe" class="historikk-liste"></ul>
+        <div id="treningUkeStrip" class="trening-uke-strip"></div>
       </div>
+
+      <div id="oversiktKort" class="oversikt-kort-liste"></div>
     </section>
 
     <!-- HISTORIKK -->

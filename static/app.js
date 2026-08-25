@@ -183,8 +183,7 @@ function settOppFaner() {
       if (btn.dataset.tab === "fysio") lastFysio();
       if (btn.dataset.tab === "hendelser") lastHendelser();
       if (btn.dataset.tab === "vekt") lastVekt();
-      if (btn.dataset.tab === "withings") { lastWithingsStatus(); lastWithingsData(); }
-      if (btn.dataset.tab === "oura") { lastOuraStatus(); lastOuraData(); }
+      if (btn.dataset.tab === "oversikt") lastOversikt();
       if (btn.dataset.tab === "historikk") lastHistorikk();
     });
   });
@@ -580,145 +579,281 @@ async function leggTilVekt(e) {
   }
 }
 
-async function lastWithingsStatus() {
-  const boks = $("withingsBoks");
-  const tekst = $("withingsStatusTekst");
-  const kobleBtn = $("withingsKobleBtn");
-  const synkBtn = $("withingsSynkBtn");
+// ---- Oversikt (samlet dashboard) ----
 
-  const res = await fetch("/api/withings/status");
+let oversiktDagerValgt = 30;
+
+const OVERSIKT_META = {
+  vekt: {
+    navn: "Vekt", kilde: "withings", kobleUrl: "/withings/connect", kobleNavn: "Withings",
+    ikon: '<path d="M6 6v12"/><path d="M18 6v12"/><path d="M9 12h6"/><rect x="3" y="9" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/>',
+  },
+  sovn: {
+    navn: "Søvn", kilde: "oura", kobleUrl: "/oura/connect", kobleNavn: "Oura",
+    ikon: '<path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/>',
+  },
+  restitusjon: {
+    navn: "Restitusjon", kilde: "oura", kobleUrl: "/oura/connect", kobleNavn: "Oura",
+    ikon: '<path d="M20.8 4.6a4.8 4.8 0 0 0-7 0L12 6.4l-1.8-1.8a4.8 4.8 0 0 0-7 6.6L12 20l8.8-8.8a4.8 4.8 0 0 0 0-6.6z"/>',
+  },
+  aktivitet: {
+    navn: "Aktivitet", kilde: "oura", kobleUrl: "/oura/connect", kobleNavn: "Oura",
+    ikon: '<path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/>',
+  },
+};
+
+async function lastOversikt() {
+  const res = await fetch(`/api/oversikt?dager=${oversiktDagerValgt}`);
   const data = await res.json();
-  boks.classList.remove("hidden");
-
-  if (!data.tilkoblet) {
-    tekst.textContent = "Ikke koblet til Withings ennå.";
-    kobleBtn.classList.remove("hidden");
-    synkBtn.classList.add("hidden");
-    return;
-  }
-
-  kobleBtn.classList.add("hidden");
-  synkBtn.classList.remove("hidden");
-  tekst.textContent = data.sist_synket
-    ? `Koblet til Withings. Sist synket: ${new Date(data.sist_synket).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "short" })}`
-    : "Koblet til Withings.";
+  renderTreningUke(data.trening_uke);
+  renderOversiktKort(data.kort, data.tilkoblinger);
 }
 
-async function lastWithingsData() {
-  const res = await fetch("/api/withings/data");
-  const data = await res.json();
-  const liste = $("withingsDataListe");
-
-  if (data.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen data fra Withings ennå.</li>`;
-    return;
-  }
-
-  liste.innerHTML = data
+function renderTreningUke(uke) {
+  const antall = uke.filter((d) => d.gjennomfort === true).length;
+  $("treningUkeAntall").textContent = `${antall} av ${uke.length} gjennomført`;
+  const iDag = new Date().toISOString().slice(0, 10);
+  $("treningUkeStrip").innerHTML = uke
     .map((d) => {
-      const badges = d.malinger
-        .map(
-          (m) =>
-            `<span class="badge">${escapeHtml(m.navn)}: ${m.verdi.toString().replace(".", ",")} ${escapeHtml(m.enhet)}</span>`
-        )
-        .join("");
-      return `
-        <li class="historikk-rad">
-          <div class="historikk-rad-header">
-            <span class="historikk-dato">${formaterDato(d.dato)}</span>
-          </div>
-          <div class="historikk-badges">${badges}</div>
-        </li>`;
+      let status = "ikke-logget";
+      if (d.gjennomfort === true) status = "gjort";
+      else if (d.gjennomfort === false) status = "ikke-gjort";
+      const idagKlasse = d.dato === iDag ? " trening-dag-idag" : "";
+      return `<div class="trening-dag trening-dag-${status}${idagKlasse}" title="${formaterDato(d.dato)}"><span>${escapeHtml(d.ukedag_kort)}</span></div>`;
     })
     .join("");
 }
 
-async function synkroniserWithings() {
-  const synkBtn = $("withingsSynkBtn");
-  const tekst = $("withingsStatusTekst");
-  synkBtn.disabled = true;
-  tekst.textContent = "Synkroniserer …";
-  const res = await fetch("/api/withings/synk", { method: "POST" });
-  const data = await res.json();
-  synkBtn.disabled = false;
-  if (!res.ok) {
-    tekst.textContent = `Kunne ikke synkronisere: ${data.error || "ukjent feil"}`;
-    return;
-  }
-  await lastWithingsStatus();
-  await lastWithingsData();
-  if (data.nye > 0) lastVekt();
-}
+function renderOversiktKort(kortListe, tilkoblinger) {
+  const container = $("oversiktKort");
 
-// ---- Oura ----
+  container.innerHTML = kortListe
+    .map((k, i) => {
+      const meta = OVERSIKT_META[k.id];
+      const fargeVar = `--metrikk-${k.id}`;
+      const ikonSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${meta.ikon}</svg>`;
+      const stil = `style="--kort-forsinkelse:${i * 70}ms"`;
 
-async function lastOuraStatus() {
-  const boks = $("ouraBoks");
-  const tekst = $("ouraStatusTekst");
-  const kobleBtn = $("ouraKobleBtn");
-  const synkBtn = $("ouraSynkBtn");
-
-  const res = await fetch("/api/oura/status");
-  const data = await res.json();
-  boks.classList.remove("hidden");
-
-  if (!data.tilkoblet) {
-    tekst.textContent = "Ikke koblet til Oura ennå.";
-    kobleBtn.classList.remove("hidden");
-    synkBtn.classList.add("hidden");
-    return;
-  }
-
-  kobleBtn.classList.add("hidden");
-  synkBtn.classList.remove("hidden");
-  tekst.textContent = data.sist_synket
-    ? `Koblet til Oura. Sist synket: ${new Date(data.sist_synket).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "short" })}`
-    : "Koblet til Oura.";
-}
-
-async function lastOuraData() {
-  const res = await fetch("/api/oura/data");
-  const data = await res.json();
-  const liste = $("ouraDataListe");
-
-  if (data.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen data fra Oura ennå.</li>`;
-    return;
-  }
-
-  liste.innerHTML = data
-    .map((d) => {
-      const badges = d.malinger
-        .map(
-          (m) =>
-            `<span class="badge">${escapeHtml(m.navn)}: ${m.verdi.toString().replace(".", ",")}${m.enhet ? " " + escapeHtml(m.enhet) : ""}</span>`
-        )
-        .join("");
-      return `
-        <li class="historikk-rad">
-          <div class="historikk-rad-header">
-            <span class="historikk-dato">${formaterDato(d.dato)}</span>
+      if (!tilkoblinger[meta.kilde]) {
+        return `
+        <div class="oversikt-kort oversikt-kort-frakoblet" ${stil}>
+          <div class="oversikt-kort-header">
+            <div class="oversikt-kort-ikon" style="color:var(${fargeVar})">${ikonSvg}</div>
+            <div class="oversikt-kort-titler"><h3>${meta.navn}</h3></div>
           </div>
-          <div class="historikk-badges">${badges}</div>
-        </li>`;
+          <div class="oversikt-frakoblet-boks">
+            <p class="hint">Koble til ${meta.kobleNavn} for å se ${meta.navn.toLowerCase()} her.</p>
+            <a href="${meta.kobleUrl}" class="btn">Koble til ${meta.kobleNavn}</a>
+          </div>
+        </div>`;
+      }
+
+      if (k.siste === null) {
+        return `
+        <div class="oversikt-kort" ${stil}>
+          <div class="oversikt-kort-header">
+            <div class="oversikt-kort-ikon" style="color:var(${fargeVar})">${ikonSvg}</div>
+            <div class="oversikt-kort-titler"><h3>${meta.navn}</h3></div>
+          </div>
+          <p class="hint">Ingen data ennå. Trykk synk-knappen øverst for å hente.</p>
+        </div>`;
+      }
+
+      const desimaler = k.enhet === "kg" || k.enhet === "%" ? 1 : 0;
+      const deltaHtml =
+        k.delta_7d == null || k.delta_7d === 0
+          ? ""
+          : `<span class="oversikt-kort-delta ${k.delta_7d > 0 ? "opp" : "ned"}">${k.delta_7d > 0 ? "↑" : "↓"} ${Math.abs(k.delta_7d).toFixed(desimaler).replace(".", ",")}${k.enhet}</span>`;
+      const sekundaerHtml = k.sekundaer
+        ? `<p class="oversikt-kort-sekundaer">${escapeHtml(k.sekundaer.navn)}: ${k.sekundaer.verdi.toString().replace(".", ",")}${k.sekundaer.enhet ? " " + escapeHtml(k.sekundaer.enhet) : ""}</p>`
+        : "";
+
+      return `
+        <div class="oversikt-kort" ${stil} data-kort="${k.id}">
+          <div class="oversikt-kort-header">
+            <div class="oversikt-kort-ikon" style="color:var(${fargeVar})">${ikonSvg}</div>
+            <div class="oversikt-kort-titler">
+              <h3>${meta.navn}</h3>
+              ${sekundaerHtml}
+            </div>
+            <div class="oversikt-kort-verdi-blokk">
+              <span class="oversikt-kort-verdi" data-til="${k.siste}" data-desimaler="${desimaler}">0</span><span class="oversikt-kort-enhet">${escapeHtml(k.enhet)}</span>
+              ${deltaHtml}
+            </div>
+          </div>
+          <div class="oversikt-graf-wrap">
+            <div class="graf-tooltip"></div>
+          </div>
+        </div>`;
     })
     .join("");
+
+  kortListe.forEach((k) => {
+    const kortEl = container.querySelector(`[data-kort="${k.id}"]`);
+    if (!kortEl) return;
+    const verdiEl = kortEl.querySelector(".oversikt-kort-verdi");
+    tellOpp(verdiEl, Number(verdiEl.dataset.til), Number(verdiEl.dataset.desimaler));
+    tegnGraf(kortEl.querySelector(".oversikt-graf-wrap"), k.serie, `--metrikk-${k.id}`);
+  });
 }
 
-async function synkroniserOura() {
-  const synkBtn = $("ouraSynkBtn");
-  const tekst = $("ouraStatusTekst");
-  synkBtn.disabled = true;
-  tekst.textContent = "Synkroniserer …";
-  const res = await fetch("/api/oura/synk", { method: "POST" });
-  const data = await res.json();
-  synkBtn.disabled = false;
-  if (!res.ok) {
-    tekst.textContent = `Kunne ikke synkronisere: ${data.error || "ukjent feil"}`;
+function tellOpp(el, tilVerdi, desimaler) {
+  const varighet = 800;
+  const start = performance.now();
+  function steg(naa) {
+    const t = Math.min((naa - start) / varighet, 1);
+    const glidning = 1 - Math.pow(1 - t, 3);
+    el.textContent = (tilVerdi * glidning).toFixed(desimaler).replace(".", ",");
+    if (t < 1) requestAnimationFrame(steg);
+  }
+  requestAnimationFrame(steg);
+}
+
+const GRAF_B = 300;
+const GRAF_H = 84;
+const GRAF_PAD = 6;
+
+function glattSti(punkter) {
+  if (punkter.length < 2) return "";
+  let d = `M ${punkter[0][0]},${punkter[0][1]}`;
+  for (let i = 0; i < punkter.length - 1; i++) {
+    const p0 = punkter[i === 0 ? 0 : i - 1];
+    const p1 = punkter[i];
+    const p2 = punkter[i + 1];
+    const p3 = punkter[i + 2 < punkter.length ? i + 2 : i + 1];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+  return d;
+}
+
+function tegnGraf(wrapEl, serie, fargeVar) {
+  const eksisterendeTooltip = wrapEl.querySelector(".graf-tooltip");
+  wrapEl.innerHTML = "";
+  if (eksisterendeTooltip) wrapEl.appendChild(eksisterendeTooltip);
+  else wrapEl.insertAdjacentHTML("beforeend", '<div class="graf-tooltip"></div>');
+
+  if (serie.length < 2) {
+    wrapEl.insertAdjacentHTML(
+      "beforeend",
+      `<p class="graf-tom">${serie.length === 1 ? "Bare én måling i denne perioden" : "Ingen data i denne perioden"}</p>`
+    );
     return;
   }
-  await lastOuraStatus();
-  await lastOuraData();
+
+  const tider = serie.map((p) => new Date(p.dato).getTime());
+  const verdier = serie.map((p) => p.verdi);
+  const tMin = Math.min(...tider);
+  const tMax = Math.max(...tider);
+  const vMin = Math.min(...verdier);
+  const vMax = Math.max(...verdier);
+  const vSpenn = (vMax - vMin) || 1;
+  const vPad = vSpenn * 0.15;
+
+  const xSkala = (t) => (tMax === tMin ? GRAF_B / 2 : GRAF_PAD + ((t - tMin) / (tMax - tMin)) * (GRAF_B - GRAF_PAD * 2));
+  const ySkala = (v) => GRAF_H - GRAF_PAD - ((v - (vMin - vPad)) / (vSpenn + vPad * 2)) * (GRAF_H - GRAF_PAD * 2);
+
+  const punkter = serie.map((p) => [xSkala(new Date(p.dato).getTime()), ySkala(p.verdi)]);
+  const linjeSti = glattSti(punkter);
+  const arealSti = `${linjeSti} L ${punkter[punkter.length - 1][0].toFixed(2)},${GRAF_H} L ${punkter[0][0].toFixed(2)},${GRAF_H} Z`;
+  const gradId = `grad-${Math.random().toString(36).slice(2, 9)}`;
+  const siste = punkter[punkter.length - 1];
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${GRAF_B} ${GRAF_H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.classList.add("oversikt-graf-svg");
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(${fargeVar})" stop-opacity="0.28" />
+        <stop offset="100%" stop-color="var(${fargeVar})" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+    <path d="${arealSti}" fill="url(#${gradId})" stroke="none" class="graf-areal"></path>
+    <path d="${linjeSti}" fill="none" stroke="var(${fargeVar})" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="graf-linje"></path>
+    <circle cx="${siste[0].toFixed(2)}" cy="${siste[1].toFixed(2)}" r="3.5" fill="var(${fargeVar})" class="graf-siste-punkt"></circle>
+    <line class="graf-krysshar" x1="0" y1="0" x2="0" y2="${GRAF_H}" opacity="0"></line>
+    <circle class="graf-hover-punkt" r="4" fill="var(${fargeVar})" opacity="0"></circle>
+  `;
+  wrapEl.insertBefore(svg, wrapEl.firstChild);
+
+  const linje = svg.querySelector(".graf-linje");
+  const lengde = linje.getTotalLength();
+  linje.style.strokeDasharray = `${lengde}`;
+  linje.style.strokeDashoffset = `${lengde}`;
+  linje.getBoundingClientRect();
+  requestAnimationFrame(() => {
+    linje.style.transition = "stroke-dashoffset 900ms cubic-bezier(.22,1,.36,1)";
+    linje.style.strokeDashoffset = "0";
+  });
+
+  const areal = svg.querySelector(".graf-areal");
+  areal.style.opacity = "0";
+  requestAnimationFrame(() => {
+    areal.style.transition = "opacity 700ms ease 250ms";
+    areal.style.opacity = "1";
+  });
+
+  const sistePunkt = svg.querySelector(".graf-siste-punkt");
+  sistePunkt.style.opacity = "0";
+  requestAnimationFrame(() => {
+    sistePunkt.style.transition = "opacity 300ms ease 850ms";
+    sistePunkt.style.opacity = "1";
+  });
+
+  const tooltip = wrapEl.querySelector(".graf-tooltip");
+  const krysshar = svg.querySelector(".graf-krysshar");
+  const hoverPunkt = svg.querySelector(".graf-hover-punkt");
+
+  function visNaermeste(clientX) {
+    const rect = svg.getBoundingClientRect();
+    const relX = ((clientX - rect.left) / rect.width) * GRAF_B;
+    let naermest = 0;
+    let minAvstand = Infinity;
+    punkter.forEach((p, i) => {
+      const avstand = Math.abs(p[0] - relX);
+      if (avstand < minAvstand) { minAvstand = avstand; naermest = i; }
+    });
+    const p = punkter[naermest];
+    const rad = serie[naermest];
+    krysshar.setAttribute("x1", p[0]);
+    krysshar.setAttribute("x2", p[0]);
+    krysshar.setAttribute("opacity", "1");
+    hoverPunkt.setAttribute("cx", p[0]);
+    hoverPunkt.setAttribute("cy", p[1]);
+    hoverPunkt.setAttribute("opacity", "1");
+    tooltip.innerHTML = `<strong>${rad.verdi.toString().replace(".", ",")}</strong><span>${formaterDato(rad.dato)}</span>`;
+    tooltip.classList.add("synlig");
+    const tooltipProsent = Math.min(Math.max((p[0] / GRAF_B) * 100, 18), 82);
+    tooltip.style.left = `${tooltipProsent}%`;
+  }
+  function skjulTooltip() {
+    krysshar.setAttribute("opacity", "0");
+    hoverPunkt.setAttribute("opacity", "0");
+    tooltip.classList.remove("synlig");
+  }
+
+  svg.addEventListener("pointermove", (e) => visNaermeste(e.clientX));
+  svg.addEventListener("pointerdown", (e) => visNaermeste(e.clientX));
+  svg.addEventListener("pointerleave", skjulTooltip);
+  svg.addEventListener("pointerup", () => setTimeout(skjulTooltip, 1500));
+}
+
+async function synkroniserAlt() {
+  const btn = $("oversiktSynkBtn");
+  btn.classList.add("roterer");
+  btn.disabled = true;
+  await Promise.all([
+    fetch("/api/withings/synk", { method: "POST" }).catch(() => null),
+    fetch("/api/oura/synk", { method: "POST" }).catch(() => null),
+  ]);
+  await lastOversikt();
+  btn.classList.remove("roterer");
+  btn.disabled = false;
 }
 
 // ---- Historikk ----
@@ -777,8 +912,15 @@ function main() {
     btn.addEventListener("click", () => settGjennomfortValg(btn.dataset.val));
   });
   $("vektForm").addEventListener("submit", leggTilVekt);
-  $("withingsSynkBtn").addEventListener("click", synkroniserWithings);
-  $("ouraSynkBtn").addEventListener("click", synkroniserOura);
+  $("oversiktSynkBtn").addEventListener("click", synkroniserAlt);
+  document.querySelectorAll("#rangeToggle .segment").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#rangeToggle .segment").forEach((b) => b.classList.remove("segment-valgt"));
+      btn.classList.add("segment-valgt");
+      oversiktDagerValgt = parseInt(btn.dataset.dager, 10);
+      lastOversikt();
+    });
+  });
   $("nyFysioBtn").addEventListener("click", () => apneFysioModal(null));
   $("fysioForm").addEventListener("submit", lagreFysio);
   $("fysioCancelBtn").addEventListener("click", lukkFysioModal);

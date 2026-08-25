@@ -1217,6 +1217,97 @@ def api_oura_synk_automatisk():
     return Response(f"Oura synkronisert: {antall} nye målinger.", mimetype="text/plain")
 
 
+# ---- Oversikt (samlet dashboard: vekt, søvn, restitusjon, aktivitet, trening) ----
+
+def _serie_og_delta(rader, desimaler):
+    """rader: liste av (dato, verdi)-tupler sortert stigende på dato.
+    Returnerer (serie, siste_verdi, siste_dato, delta_7d) - delta_7d er
+    endringen mot nærmeste måling minst 7 dager før siste."""
+    if not rader:
+        return [], None, None, None
+    serie = [{"dato": d, "verdi": round(v, desimaler)} for d, v in rader]
+    siste_dato, siste_verdi = rader[-1]
+    grense = (date.fromisoformat(siste_dato) - timedelta(days=7)).isoformat()
+    tidligere = [v for d, v in rader if d <= grense]
+    delta = round(siste_verdi - tidligere[-1], desimaler) if tidligere else None
+    return serie, round(siste_verdi, desimaler), siste_dato, delta
+
+
+@app.route("/api/oversikt")
+def api_oversikt():
+    """Samlet data til dashboardet - én forespørsel i stedet for at
+    frontend må spørre withings/oura/trening hver for seg."""
+    dager = max(7, min(int(request.args.get("dager", 30)), 365))
+    fra_dato = (date.today() - timedelta(days=dager)).isoformat()
+    db = get_db()
+
+    def hent(sql, *param):
+        return [(r["dato"], r["verdi"]) for r in db.execute(sql, param).fetchall()]
+
+    vekt_rader = hent(
+        "SELECT dato, vekt_kg AS verdi FROM vektlogg WHERE dato >= ? ORDER BY dato", fra_dato
+    )
+    fett_rader = hent(
+        "SELECT dato, verdi FROM withings_malinger WHERE type = 6 AND dato >= ? ORDER BY dato", fra_dato
+    )
+    sovn_rader = hent(
+        "SELECT dato, verdi FROM oura_malinger WHERE type = 'sovn_score' AND dato >= ? ORDER BY dato", fra_dato
+    )
+    restitusjon_rader = hent(
+        "SELECT dato, verdi FROM oura_malinger WHERE type = 'restitusjon_score' AND dato >= ? ORDER BY dato", fra_dato
+    )
+    aktivitet_rader = hent(
+        "SELECT dato, verdi FROM oura_malinger WHERE type = 'aktivitet_score' AND dato >= ? ORDER BY dato", fra_dato
+    )
+    skritt_rader = hent(
+        "SELECT dato, verdi FROM oura_malinger WHERE type = 'skritt' AND dato >= ? ORDER BY dato", fra_dato
+    )
+
+    def sekundaer_verdi(rader, navn, enhet, desimaler):
+        _, siste, _, _ = _serie_og_delta(rader, desimaler)
+        return {"navn": navn, "enhet": enhet, "verdi": siste} if siste is not None else None
+
+    kort = []
+    for id_, navn, enhet, desimaler, rader, sekundaer in (
+        ("vekt", "Vekt", "kg", 1, vekt_rader, sekundaer_verdi(fett_rader, "Fettprosent", "%", 1)),
+        ("sovn", "Søvn", "", 0, sovn_rader, None),
+        ("restitusjon", "Restitusjon", "", 0, restitusjon_rader, None),
+        ("aktivitet", "Aktivitet", "", 0, aktivitet_rader, sekundaer_verdi(skritt_rader, "Skritt", "", 0)),
+    ):
+        serie, siste, siste_dato, delta = _serie_og_delta(rader, desimaler)
+        kort.append({
+            "id": id_, "navn": navn, "enhet": enhet,
+            "siste": siste, "siste_dato": siste_dato, "delta_7d": delta,
+            "serie": serie, "sekundaer": sekundaer,
+        })
+
+    trening_fra = (date.today() - timedelta(days=6)).isoformat()
+    trening_status = {
+        r["dato"]: bool(r["gjennomfort"])
+        for r in db.execute(
+            "SELECT dato, gjennomfort FROM dagslogg WHERE dato >= ?", (trening_fra,)
+        ).fetchall()
+    }
+    trening_uke = []
+    for i in range(6, -1, -1):
+        d = date.today() - timedelta(days=i)
+        d_str = d.isoformat()
+        trening_uke.append({
+            "dato": d_str,
+            "ukedag_kort": UKEDAGER[d.isoweekday() - 1][:2],
+            "gjennomfort": trening_status.get(d_str),
+        })
+
+    return jsonify({
+        "tilkoblinger": {
+            "withings": db.execute("SELECT 1 FROM withings_konto WHERE id = 1").fetchone() is not None,
+            "oura": db.execute("SELECT 1 FROM oura_konto WHERE id = 1").fetchone() is not None,
+        },
+        "kort": kort,
+        "trening_uke": trening_uke,
+    })
+
+
 @app.route("/api/uke")
 def api_uke():
     dato_str = request.args.get("dato") or date.today().isoformat()

@@ -13,6 +13,10 @@
   --warn-soft: #f4e9d8;
   --muted-soft: #eef0f2;
   --shadow: 0 1px 3px rgba(20, 40, 35, 0.06), 0 1px 2px rgba(20, 40, 35, 0.04);
+  --metrikk-vekt: #0f9169;
+  --metrikk-sovn: #2563eb;
+  --metrikk-restitusjon: #db2777;
+  --metrikk-aktivitet: #9c6a0a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +35,10 @@
     --warn-soft: #362d19;
     --muted-soft: #232f2a;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --metrikk-vekt: #1f9e78;
+    --metrikk-sovn: #3b82f6;
+    --metrikk-restitusjon: #ec4899;
+    --metrikk-aktivitet: #b8863a;
   }
 }
 
@@ -460,16 +468,6 @@ form textarea {
   margin-top: 10px;
 }
 
-.withings-boks {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.withings-boks .hint { margin: 0; flex: 1 1 220px; }
-
 /* Uken */
 
 .uke-grid {
@@ -671,3 +669,210 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 .spacer { flex: 1; }
 
 .pakrevd { color: var(--danger); font-weight: 400; font-size: 11px; }
+
+/* Oversikt (samlet dashboard) */
+
+.oversikt-topp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.range-toggle { flex: 1; margin-top: 0; }
+.range-toggle .segment { padding: 10px 8px; min-height: 40px; }
+.range-toggle .segment.segment-valgt {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.ikon-knapp {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--panel);
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+
+.ikon-knapp svg { width: 19px; height: 19px; }
+.ikon-knapp:active { transform: scale(0.94); }
+.ikon-knapp.roterer svg { animation: oversikt-spinn 0.9s linear infinite; }
+
+@keyframes oversikt-spinn {
+  to { transform: rotate(360deg); }
+}
+
+.trening-uke-card { padding: 14px 16px; }
+
+.trening-uke-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.trening-uke-header h2 { margin: 0; font-size: 15px; }
+.trening-uke-header .hint { margin: 0; }
+
+.trening-uke-strip {
+  display: flex;
+  gap: 6px;
+}
+
+.trening-dag {
+  flex: 1;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--muted-soft);
+  color: var(--muted);
+  border: 1.5px solid transparent;
+}
+
+.trening-dag-gjort { background: var(--accent); color: white; }
+.trening-dag-ikke-gjort { background: var(--danger-soft); color: var(--danger); }
+.trening-dag-idag { border-color: var(--accent-dark); }
+
+.oversikt-kort-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.oversikt-kort {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  animation: oversikt-kort-inn 500ms cubic-bezier(.22,1,.36,1) both;
+  animation-delay: var(--kort-forsinkelse, 0ms);
+}
+
+@keyframes oversikt-kort-inn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.oversikt-kort-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.oversikt-kort-ikon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oversikt-kort-ikon svg {
+  width: 19px;
+  height: 19px;
+  color: var(--panel);
+}
+
+.oversikt-kort-titler { flex: 1; min-width: 0; }
+.oversikt-kort-titler h3 { margin: 0; font-size: 14px; color: var(--text); }
+
+.oversikt-kort-sekundaer {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oversikt-kort-verdi-blokk {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.oversikt-kort-verdi {
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1;
+}
+
+.oversikt-kort-enhet {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.oversikt-kort-delta {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.oversikt-graf-wrap {
+  position: relative;
+  margin-top: 10px;
+  touch-action: pan-y;
+}
+
+.oversikt-graf-svg { width: 100%; height: 84px; display: block; }
+
+.graf-linje { vector-effect: non-scaling-stroke; }
+
+.graf-krysshar { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2,3; }
+.graf-hover-punkt { stroke: var(--panel); stroke-width: 2; }
+
+.graf-tom {
+  margin: 20px 0 4px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.graf-tooltip {
+  position: absolute;
+  top: -6px;
+  transform: translate(-50%, -100%);
+  background: var(--text);
+  color: var(--bg);
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 2;
+}
+
+.graf-tooltip.synlig { opacity: 1; }
+.graf-tooltip strong { font-variant-numeric: tabular-nums; margin-right: 5px; }
+.graf-tooltip span { color: var(--bg); opacity: 0.7; }
+
+.oversikt-kort-frakoblet .oversikt-kort-header { margin-bottom: 12px; }
+
+.oversikt-frakoblet-boks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.oversikt-frakoblet-boks .hint { margin: 0; flex: 1 1 180px; }
