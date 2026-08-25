@@ -181,7 +181,6 @@ function settOppFaner() {
       btn.classList.add("active");
       $(`tab-${btn.dataset.tab}`).classList.add("active");
       if (btn.dataset.tab === "fysio") lastFysio();
-      if (btn.dataset.tab === "vekt") lastVekt();
       if (btn.dataset.tab === "oversikt") lastOversikt();
       if (btn.dataset.tab === "historikk") lastHistorikk();
     });
@@ -399,94 +398,9 @@ async function slettFysio() {
   lastDag();
 }
 
-// ---- Vekt ----
-
-async function lastVekt() {
-  const res = await fetch("/api/vekt");
-  const data = await res.json();
-
-  const liste = $("vektListe");
-  if (data.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen vekt registrert ennå.</li>`;
-  } else {
-    liste.innerHTML = [...data]
-      .reverse()
-      .map(
-        (v) => `
-        <li>
-          <span>${formaterDato(v.dato)}</span>
-          <strong>${v.vekt_kg.toString().replace(".", ",")} kg</strong>
-          <button type="button" class="slett-lenke" data-id="${v.id}">Slett</button>
-        </li>`
-      )
-      .join("");
-    liste.querySelectorAll(".slett-lenke").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await fetch(`/api/vekt/${btn.dataset.id}`, { method: "DELETE" });
-        lastVekt();
-      });
-    });
-  }
-
-  tegnVektGraf(data);
-}
-
 function formaterDato(isoDato) {
   const [aar, mnd, dag] = isoDato.split("-");
   return `${dag}.${mnd}.${aar}`;
-}
-
-function tegnVektGraf(data) {
-  const wrap = $("vektGrafWrap");
-  const svg = $("vektGraf");
-  if (data.length < 2) {
-    wrap.classList.add("hidden");
-    svg.innerHTML = "";
-    return;
-  }
-  wrap.classList.remove("hidden");
-
-  const bredde = 600;
-  const hoyde = 220;
-  const marg = 30;
-
-  const vekter = data.map((v) => v.vekt_kg);
-  const min = Math.min(...vekter);
-  const max = Math.max(...vekter);
-  const spenn = max - min || 1;
-
-  const punkter = data.map((v, i) => {
-    const x = marg + (i / (data.length - 1)) * (bredde - marg * 2);
-    const y = hoyde - marg - ((v.vekt_kg - min) / spenn) * (hoyde - marg * 2);
-    return [x, y];
-  });
-
-  const linje = punkter.map(([x, y]) => `${x},${y}`).join(" ");
-  const prikker = punkter
-    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4" fill="#1f7a5c" />`)
-    .join("");
-
-  svg.innerHTML = `
-    <polyline points="${linje}" fill="none" stroke="#1f7a5c" stroke-width="3" />
-    ${prikker}
-  `;
-}
-
-async function leggTilVekt(e) {
-  e.preventDefault();
-  const body = {
-    dato: $("vektDato").value,
-    vekt_kg: $("vektKg").value,
-  };
-  const res = await fetch("/api/vekt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (res.ok) {
-    $("vektKg").value = "";
-    lastVekt();
-  }
 }
 
 // ---- Oversikt (samlet dashboard) ----
@@ -515,11 +429,12 @@ const OVERSIKT_META = {
 async function lastOversikt() {
   const res = await fetch(`/api/oversikt?dager=${oversiktDagerValgt}`);
   const data = await res.json();
-  renderTreningUke(data.trening_uke);
+  renderTreningUke(data.trening_uke, data.streak_uker);
   renderOversiktKort(data.kort, data.tilkoblinger);
+  renderInnsikt(data.innsikt);
 }
 
-function renderTreningUke(uke) {
+function renderTreningUke(uke, streakUker) {
   const antall = uke.filter((d) => d.gjennomfort === true).length;
   $("treningUkeAntall").textContent = `${antall} av ${uke.length} gjennomført`;
   const iDag = new Date().toISOString().slice(0, 10);
@@ -532,6 +447,39 @@ function renderTreningUke(uke) {
       return `<div class="trening-dag trening-dag-${status}${idagKlasse}" title="${formaterDato(d.dato)}"><span>${escapeHtml(d.ukedag_kort)}</span></div>`;
     })
     .join("");
+
+  const streakEl = $("streakTekst");
+  if (streakUker >= 1) {
+    streakEl.textContent = `${streakUker} ${streakUker === 1 ? "uke" : "uker"} på rad med full gjennomføring`;
+    streakEl.classList.remove("hidden");
+  } else {
+    streakEl.classList.add("hidden");
+  }
+}
+
+function renderInnsikt(innsikt) {
+  const kort = $("innsiktCard");
+  if (!innsikt || !innsikt.nok_data) {
+    kort.classList.add("hidden");
+    return;
+  }
+  const fmt = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1).replace(".", ",")} kg`;
+  $("innsiktTekst").textContent =
+    `Ukene med minst 80% gjennomføring (${innsikt.uker_hoy} uker) endret vekten seg i snitt ${fmt(innsikt.snitt_delta_hoy)}, ` +
+    `mot ${fmt(innsikt.snitt_delta_lav)} i ukene med lavere gjennomføring (${innsikt.uker_lav} uker).`;
+  kort.classList.remove("hidden");
+}
+
+function malFremgangHtml(mal) {
+  if (!mal) return "";
+  const fmt1 = (v) => v.toFixed(1).replace(".", ",");
+  const fortsattTekst =
+    mal.gjenstaende_kg > 0
+      ? `${fmt1(mal.gjenstaende_kg)} kg igjen til ${fmt1(mal.mal_vekt_kg)} kg`
+      : `Målet på ${fmt1(mal.mal_vekt_kg)} kg er nådd!`;
+  const prosentTekst = mal.prosent_fullfort != null ? ` · ${mal.prosent_fullfort}% av veien` : "";
+  const datoTekst = mal.projisert_dato ? ` · ca. ${formaterDato(mal.projisert_dato)} i dagens tempo` : "";
+  return `<p class="oversikt-kort-hint oversikt-mal-tekst">${fortsattTekst}${prosentTekst}${datoTekst}</p>`;
 }
 
 function renderOversiktKort(kortListe, tilkoblinger) {
@@ -543,8 +491,13 @@ function renderOversiktKort(kortListe, tilkoblinger) {
       const fargeVar = `--metrikk-${k.id}`;
       const ikonSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${meta.ikon}</svg>`;
       const stil = `style="--kort-forsinkelse:${i * 70}ms"`;
+      const erVekt = k.id === "vekt";
+      const kildeStatus = tilkoblinger[meta.kilde] || { tilkoblet: false, advarsel: false, melding: null };
 
-      if (!tilkoblinger[meta.kilde]) {
+      // Søvn/restitusjon/aktivitet kommer bare fra Oura og vises helt
+      // frakoblet inntil man kobler til. Vekt kan alltid registreres
+      // manuelt, så det kortet skal aldri gjemmes bak en tilkobling.
+      if (!kildeStatus.tilkoblet && !erVekt) {
         return `
         <div class="oversikt-kort oversikt-kort-frakoblet" ${stil}>
           <div class="oversikt-kort-header">
@@ -558,14 +511,47 @@ function renderOversiktKort(kortListe, tilkoblinger) {
         </div>`;
       }
 
-      if (k.siste === null) {
+      const harData = k.siste !== null;
+      const advarselHtml = kildeStatus.tilkoblet && kildeStatus.advarsel
+        ? `<p class="oversikt-kort-advarsel">OBS: ${escapeHtml(kildeStatus.melding || "Synkroniseringen har stoppet opp.")}</p>`
+        : "";
+      const koblingHint = erVekt && !kildeStatus.tilkoblet
+        ? `<p class="oversikt-kort-hint">Ikke koblet til Withings - <a href="${meta.kobleUrl}">koble til</a> for å hente vekten automatisk.</p>`
+        : "";
+      const vektVerktoyHtml = erVekt
+        ? `
+        <div class="vekt-verktoy">
+          <button type="button" class="lenke-knapp" data-vekt-handling="legg-til">+ Registrer vekt</button>
+          <button type="button" class="lenke-knapp" data-vekt-handling="mal">Sett målvekt</button>
+          <button type="button" class="lenke-knapp" data-vekt-handling="liste">Vis alle registreringer</button>
+        </div>
+        <div class="vekt-inline-boks hidden" data-vekt-boks="legg-til">
+          <form class="inline-form" data-vekt-form="legg-til">
+            <label>Dato<input type="date" data-vekt-felt="dato" required /></label>
+            <label>Vekt (kg)<input type="text" data-vekt-felt="vekt" inputmode="decimal" placeholder="F.eks. 92,4" required /></label>
+            <button type="submit" class="btn primary">Lagre</button>
+          </form>
+        </div>
+        <div class="vekt-inline-boks hidden" data-vekt-boks="mal">
+          <form class="inline-form" data-vekt-form="mal">
+            <label>Målvekt (kg)<input type="text" data-vekt-felt="mal" inputmode="decimal" placeholder="F.eks. 85" value="${k.mal ? k.mal.mal_vekt_kg.toString().replace(".", ",") : ""}" /></label>
+            <button type="submit" class="btn primary">Lagre</button>
+          </form>
+        </div>
+        <ul class="vekt-liste hidden" data-vekt-liste></ul>
+      `
+        : "";
+
+      if (!harData) {
         return `
-        <div class="oversikt-kort" ${stil}>
+        <div class="oversikt-kort" ${stil} data-kort="${k.id}">
           <div class="oversikt-kort-header">
             <div class="oversikt-kort-ikon" style="color:var(${fargeVar})">${ikonSvg}</div>
             <div class="oversikt-kort-titler"><h3>${meta.navn}</h3></div>
           </div>
-          <p class="hint">Ingen data ennå. Trykk synk-knappen øverst for å hente.</p>
+          <p class="hint">${erVekt ? "Ingen vekt registrert ennå." : "Ingen data ennå. Trykk synk-knappen øverst for å hente."}</p>
+          ${koblingHint}
+          ${vektVerktoyHtml}
         </div>`;
       }
 
@@ -583,9 +569,10 @@ function renderOversiktKort(kortListe, tilkoblinger) {
             .join("")}</div>`
         : "";
       const sekundaerHint =
-        k.id === "vekt" && k.sekundaer.length
+        erVekt && k.sekundaer.length
           ? `<p class="oversikt-kort-hint">Fettmasse + muskelmasse + beinmasse ≈ vekten. Kroppsvann overlapper med disse (ligger allerede inni fett- og muskelmassen), så det skal ikke legges til.</p>`
           : "";
+      const malHtml = erVekt ? malFremgangHtml(k.mal) : "";
 
       return `
         <div class="oversikt-kort" ${stil} data-kort="${k.id}">
@@ -601,9 +588,13 @@ function renderOversiktKort(kortListe, tilkoblinger) {
           </div>
           ${sekundaerHtml}
           ${sekundaerHint}
+          ${malHtml}
+          ${advarselHtml}
           <div class="oversikt-graf-wrap">
             <div class="graf-tooltip"></div>
           </div>
+          ${koblingHint}
+          ${vektVerktoyHtml}
         </div>`;
     })
     .join("");
@@ -612,8 +603,93 @@ function renderOversiktKort(kortListe, tilkoblinger) {
     const kortEl = container.querySelector(`[data-kort="${k.id}"]`);
     if (!kortEl) return;
     const verdiEl = kortEl.querySelector(".oversikt-kort-verdi");
-    tellOpp(verdiEl, Number(verdiEl.dataset.til), Number(verdiEl.dataset.desimaler));
-    tegnGraf(kortEl.querySelector(".oversikt-graf-wrap"), k.serie, `--metrikk-${k.id}`);
+    if (verdiEl) {
+      tellOpp(verdiEl, Number(verdiEl.dataset.til), Number(verdiEl.dataset.desimaler));
+      tegnGraf(kortEl.querySelector(".oversikt-graf-wrap"), k.serie, `--metrikk-${k.id}`, k.id === "vekt");
+    }
+    if (k.id === "vekt") settOppVektVerktoy(kortEl);
+  });
+}
+
+function settOppVektVerktoy(kortEl) {
+  const knapper = kortEl.querySelectorAll("[data-vekt-handling]");
+  if (knapper.length === 0) return;
+
+  const datoFelt = kortEl.querySelector('[data-vekt-felt="dato"]');
+  if (datoFelt) datoFelt.value = idagDato();
+
+  const boksFor = {
+    "legg-til": kortEl.querySelector('[data-vekt-boks="legg-til"]'),
+    mal: kortEl.querySelector('[data-vekt-boks="mal"]'),
+  };
+  const listeEl = kortEl.querySelector("[data-vekt-liste]");
+
+  knapper.forEach((knapp) => {
+    knapp.addEventListener("click", async () => {
+      const valg = knapp.dataset.vektHandling;
+      if (valg === "liste") {
+        const skjult = listeEl.classList.contains("hidden");
+        if (skjult) await lastVektListe(listeEl);
+        listeEl.classList.toggle("hidden");
+        return;
+      }
+      const andreBoks = valg === "legg-til" ? boksFor.mal : boksFor["legg-til"];
+      andreBoks.classList.add("hidden");
+      boksFor[valg].classList.toggle("hidden");
+    });
+  });
+
+  const leggTilForm = kortEl.querySelector('[data-vekt-form="legg-til"]');
+  leggTilForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = {
+      dato: leggTilForm.querySelector('[data-vekt-felt="dato"]').value,
+      vekt_kg: leggTilForm.querySelector('[data-vekt-felt="vekt"]').value,
+    };
+    const res = await fetch("/api/vekt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) lastOversikt();
+  });
+
+  const malForm = kortEl.querySelector('[data-vekt-form="mal"]');
+  malForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const verdi = malForm.querySelector('[data-vekt-felt="mal"]').value;
+    await fetch("/api/mal-vekt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mal_vekt_kg: verdi }),
+    });
+    lastOversikt();
+  });
+}
+
+async function lastVektListe(listeEl) {
+  const res = await fetch("/api/vekt");
+  const data = await res.json();
+  if (data.length === 0) {
+    listeEl.innerHTML = `<li class="tom">Ingen vekt registrert ennå.</li>`;
+    return;
+  }
+  listeEl.innerHTML = [...data]
+    .reverse()
+    .map(
+      (v) => `
+      <li>
+        <span>${formaterDato(v.dato)}</span>
+        <strong>${v.vekt_kg.toString().replace(".", ",")} kg</strong>
+        <button type="button" class="slett-lenke" data-id="${v.id}">Slett</button>
+      </li>`
+    )
+    .join("");
+  listeEl.querySelectorAll(".slett-lenke").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await fetch(`/api/vekt/${btn.dataset.id}`, { method: "DELETE" });
+      lastOversikt();
+    });
   });
 }
 
@@ -650,7 +726,7 @@ function glattSti(punkter) {
   return d;
 }
 
-function tegnGraf(wrapEl, serie, fargeVar) {
+function tegnGraf(wrapEl, serie, fargeVar, visSnitt) {
   const eksisterendeTooltip = wrapEl.querySelector(".graf-tooltip");
   wrapEl.innerHTML = "";
   if (eksisterendeTooltip) wrapEl.appendChild(eksisterendeTooltip);
@@ -682,6 +758,14 @@ function tegnGraf(wrapEl, serie, fargeVar) {
   const gradId = `grad-${Math.random().toString(36).slice(2, 9)}`;
   const siste = punkter[punkter.length - 1];
 
+  // Daglige målinger (spesielt vekt) hopper naturlig litt opp og ned - når
+  // visSnitt er på tegnes et jevnere 7-dagers glidende snitt oppå de rå
+  // punktene, og selve rålinjen dempes så snittet blir det øyet fanger først.
+  const harSnitt = !!visSnitt && serie.some((p) => p.snitt != null);
+  const snittSti = harSnitt
+    ? glattSti(serie.map((p) => [xSkala(new Date(p.dato).getTime()), ySkala(p.snitt)]))
+    : "";
+
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${GRAF_B} ${GRAF_H}`);
   svg.setAttribute("preserveAspectRatio", "none");
@@ -694,7 +778,8 @@ function tegnGraf(wrapEl, serie, fargeVar) {
       </linearGradient>
     </defs>
     <path d="${arealSti}" fill="url(#${gradId})" stroke="none" class="graf-areal"></path>
-    <path d="${linjeSti}" fill="none" stroke="var(${fargeVar})" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="graf-linje"></path>
+    <path d="${linjeSti}" fill="none" stroke="var(${fargeVar})" stroke-width="${harSnitt ? 1.5 : 2}" stroke-linecap="round" stroke-linejoin="round" opacity="${harSnitt ? 0.35 : 1}" class="graf-linje"></path>
+    ${harSnitt ? `<path d="${snittSti}" fill="none" stroke="var(${fargeVar})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="graf-snitt-linje"></path>` : ""}
     <circle cx="${siste[0].toFixed(2)}" cy="${siste[1].toFixed(2)}" r="3.5" fill="var(${fargeVar})" class="graf-siste-punkt"></circle>
     <line class="graf-krysshar" x1="0" y1="0" x2="0" y2="${GRAF_H}" opacity="0"></line>
     <circle class="graf-hover-punkt" r="4" fill="var(${fargeVar})" opacity="0"></circle>
@@ -830,13 +915,11 @@ function escapeHtml(tekst) {
 
 function main() {
   settOppFaner();
-  $("vektDato").value = idagDato();
 
   $("dagsloggForm").addEventListener("submit", lagreDagslogg);
   document.querySelectorAll("#gjennomfortToggle .segment").forEach((btn) => {
     btn.addEventListener("click", () => settGjennomfortValg(btn.dataset.val));
   });
-  $("vektForm").addEventListener("submit", leggTilVekt);
   $("oversiktSynkBtn").addEventListener("click", synkroniserAlt);
   document.querySelectorAll("#rangeToggle .segment").forEach((btn) => {
     btn.addEventListener("click", () => {

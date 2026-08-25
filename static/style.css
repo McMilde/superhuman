@@ -871,3 +871,34 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 }
 
 .oversikt-frakoblet-boks .hint { margin: 0; flex: 1 1 180px; }
+
+.oversikt-kort-advarsel {
+  font-size: 12px;
+  color: var(--danger);
+  margin: 8px 0 0;
+  line-height: 1.4;
+}
+
+.oversikt-mal-tekst { font-weight: 700; color: var(--text); }
+
+.lenke-knapp {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+.vekt-verktoy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.vekt-inline-boks { margin-top: 10px; }
+
+.oversikt-kort .vekt-liste { margin-top: 10px; }

@@ -38,10 +38,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 6.6a4.8 4.8 0 0 0-7-4.4 4.8 4.8 0 0 0-7 4.4c0 3.6 3.6 6 7 9.4 3.4-3.4 7-5.8 7-9.4z"/></svg>
       <span>Fysio</span>
     </button>
-    <button class="tab" data-tab="vekt">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v12"/><path d="M18 6v12"/><path d="M9 12h6"/><rect x="3" y="9" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/></svg>
-      <span>Vekt</span>
-    </button>
     <button class="tab" data-tab="historikk">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg>
       <span>Historikk</span>
@@ -132,26 +128,6 @@
       </div>
     </section>
 
-    <!-- VEKT -->
-    <section id="tab-vekt" class="tab-panel">
-      <div class="card">
-        <h2>Vektlogg</h2>
-        <form id="vektForm" class="inline-form">
-          <label>Dato
-            <input type="date" id="vektDato" required />
-          </label>
-          <label>Vekt (kg)
-            <input type="text" id="vektKg" inputmode="decimal" placeholder="F.eks. 92,4" required />
-          </label>
-          <button type="submit" class="btn primary">Legg til</button>
-        </form>
-        <div id="vektGrafWrap" class="hidden">
-          <svg id="vektGraf" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
-        </div>
-        <ul id="vektListe" class="vekt-liste"></ul>
-      </div>
-    </section>
-
     <!-- OVERSIKT (samlet dashboard: vekt, søvn, restitusjon, aktivitet, trening) -->
     <section id="tab-oversikt" class="tab-panel">
       <div class="oversikt-topp">
@@ -170,10 +146,16 @@
           <h2>Trening denne uken</h2>
           <span id="treningUkeAntall" class="hint"></span>
         </div>
+        <p id="streakTekst" class="hint hidden"></p>
         <div id="treningUkeStrip" class="trening-uke-strip"></div>
       </div>
 
       <div id="oversiktKort" class="oversikt-kort-liste"></div>
+
+      <div id="innsiktCard" class="card hidden">
+        <h2>Innsikt</h2>
+        <p id="innsiktTekst" class="hint"></p>
+      </div>
     </section>
 
     <!-- HISTORIKK -->
@@ -185,6 +167,11 @@
       <div class="card">
         <h2>Tidligere dager</h2>
         <ul id="historikkListe" class="historikk-liste"></ul>
+      </div>
+      <div class="card">
+        <h2>Data</h2>
+        <p class="hint">Alt appen har lagret (trening, vekt, søvn osv.) i én fil, som en trygghetskopi.</p>
+        <a href="/api/backup" class="btn">Last ned sikkerhetskopi</a>
       </div>
     </section>
   </main>

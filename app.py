@@ -5,12 +5,16 @@ import sqlite3
 import webbrowser
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import mkstemp
 from threading import Timer
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Flask, Response, g, jsonify, redirect, request, session, url_for
+from flask import (
+    Flask, Response, after_this_request, g, jsonify, redirect, request,
+    send_file, session, url_for,
+)
 
 DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).parent / "trening.db")))
 
@@ -455,6 +459,8 @@ def init_db():
     if "oura_pending_state" not in innstillinger_kolonner:
         # Samme mønster/begrunnelse som withings_pending_state over, for Oura-tilkoblingen.
         conn.execute("ALTER TABLE innstillinger ADD COLUMN oura_pending_state TEXT")
+    if "mal_vekt_kg" not in innstillinger_kolonner:
+        conn.execute("ALTER TABLE innstillinger ADD COLUMN mal_vekt_kg REAL")
 
     conn.execute(
         """
@@ -576,6 +582,11 @@ def init_db():
         )
         """
     )
+    withings_konto_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(withings_konto)")}
+    if "siste_feil" not in withings_konto_kolonner:
+        conn.execute("ALTER TABLE withings_konto ADD COLUMN siste_feil TEXT")
+    if "siste_feil_tidspunkt" not in withings_konto_kolonner:
+        conn.execute("ALTER TABLE withings_konto ADD COLUMN siste_feil_tidspunkt TEXT")
 
     # Alle måletyper fra Withings (vekt, fettprosent, muskelmasse, puls osv.),
     # ikke bare vekten - se WITHINGS_MALETYPER. UNIQUE(grpid, type) gjør synk
@@ -608,6 +619,12 @@ def init_db():
         )
         """
     )
+    oura_konto_kolonner = {row["name"] for row in conn.execute("PRAGMA table_info(oura_konto)")}
+    if "siste_feil" not in oura_konto_kolonner:
+        conn.execute("ALTER TABLE oura_konto ADD COLUMN siste_feil TEXT")
+    if "siste_feil_tidspunkt" not in oura_konto_kolonner:
+        conn.execute("ALTER TABLE oura_konto ADD COLUMN siste_feil_tidspunkt TEXT")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS oura_malinger (
@@ -809,13 +826,26 @@ def withings_hent_gyldig_token():
     return rad["access_token"], None
 
 
+def _lagre_withings_feil(feil):
+    db = get_db()
+    db.execute(
+        "UPDATE withings_konto SET siste_feil = ?, siste_feil_tidspunkt = ? WHERE id = 1",
+        (str(feil)[:300], datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+
+
 def withings_synk():
     """Henter alle nye målinger fra Withings (vekt, fettprosent, muskelmasse,
     puls osv. - se WITHINGS_MALETYPER) og lagrer dem i withings_malinger.
     Vekten (type 1) legges i tillegg inn i vektlogg, som før.
-    Returnerer (antall_nye, None) eller (None, feiltekst)."""
+    Returnerer (antall_nye, None) eller (None, feiltekst). Ved feil (utenom
+    "ikke_tilkoblet", som bare betyr at Withings aldri er koblet til) lagres
+    feilen slik at /api/oversikt kan varsle om at synken har stoppet opp."""
     access_token, feil = withings_hent_gyldig_token()
     if feil:
+        if feil != "ikke_tilkoblet":
+            _lagre_withings_feil(feil)
         return None, feil
 
     db = get_db()
@@ -833,10 +863,13 @@ def withings_synk():
             timeout=15,
         ).json()
     except requests.RequestException as e:
+        _lagre_withings_feil(str(e))
         return None, str(e)
 
     if svar.get("status") != 0:
-        return None, svar.get("error") or f"Withings-feil (status {svar.get('status')})"
+        feil = svar.get("error") or f"Withings-feil (status {svar.get('status')})"
+        _lagre_withings_feil(feil)
+        return None, feil
 
     antall_nye = 0
     nyeste_epoch = rad["siste_maling_epoch"]
@@ -863,7 +896,8 @@ def withings_synk():
                 )
 
     db.execute(
-        "UPDATE withings_konto SET siste_maling_epoch = ?, sist_synket = ? WHERE id = 1",
+        "UPDATE withings_konto SET siste_maling_epoch = ?, sist_synket = ?, "
+        "siste_feil = NULL, siste_feil_tidspunkt = NULL WHERE id = 1",
         (nyeste_epoch, datetime.now(timezone.utc).isoformat()),
     )
     db.commit()
@@ -1017,12 +1051,24 @@ def oura_hent_gyldig_token():
     return rad["access_token"], None
 
 
+def _lagre_oura_feil(feil):
+    db = get_db()
+    db.execute(
+        "UPDATE oura_konto SET siste_feil = ?, siste_feil_tidspunkt = ? WHERE id = 1",
+        (str(feil)[:300], datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+
+
 def oura_synk():
     """Henter nye dagssammendrag (søvn-, restitusjon- og aktivitet-poengsum,
     pluss skritt) fra Oura og lagrer dem i oura_malinger.
-    Returnerer (antall, None) eller (None, feiltekst)."""
+    Returnerer (antall, None) eller (None, feiltekst). Se withings_synk for
+    begrunnelsen bak feillagringen."""
     access_token, feil = oura_hent_gyldig_token()
     if feil:
+        if feil != "ikke_tilkoblet":
+            _lagre_oura_feil(feil)
         return None, feil
 
     db = get_db()
@@ -1049,10 +1095,13 @@ def oura_synk():
                 timeout=15,
             )
         except requests.RequestException as e:
+            _lagre_oura_feil(str(e))
             return None, str(e)
 
         if svar.status_code != 200:
-            return None, f"Oura-feil ({svar.status_code}) på {sti}: {svar.text[:200]}"
+            feil = f"Oura-feil ({svar.status_code}) på {sti}: {svar.text[:200]}"
+            _lagre_oura_feil(feil)
+            return None, feil
 
         for rad_data in svar.json().get("data", []):
             dag = rad_data.get("day")
@@ -1077,7 +1126,8 @@ def oura_synk():
                 antall_nye += 1
 
     db.execute(
-        "UPDATE oura_konto SET siste_dag_synket = ?, sist_synket = ? WHERE id = 1",
+        "UPDATE oura_konto SET siste_dag_synket = ?, sist_synket = ?, "
+        "siste_feil = NULL, siste_feil_tidspunkt = NULL WHERE id = 1",
         (nyeste_dag, datetime.now(timezone.utc).isoformat()),
     )
     db.commit()
@@ -1179,15 +1229,182 @@ def api_oura_synk_automatisk():
 def _serie_og_delta(rader, desimaler):
     """rader: liste av (dato, verdi)-tupler sortert stigende på dato.
     Returnerer (serie, siste_verdi, siste_dato, delta_7d) - delta_7d er
-    endringen mot nærmeste måling minst 7 dager før siste."""
+    endringen mot nærmeste måling minst 7 dager før siste. Hvert punkt i
+    serien får også et "snitt"-felt (glidende 7-dagers snitt), som brukes
+    til å tegne en jevnere trendlinje oppå de daglige (ofte støyete) punktene."""
     if not rader:
         return [], None, None, None
-    serie = [{"dato": d, "verdi": round(v, desimaler)} for d, v in rader]
+
+    datoer = [date.fromisoformat(d) for d, _ in rader]
+    verdier = [v for _, v in rader]
+    serie = []
+    for i, (d_str, v) in enumerate(rader):
+        vindu = [verdier[j] for j in range(len(rader)) if 0 <= (datoer[i] - datoer[j]).days <= 6]
+        serie.append({
+            "dato": d_str,
+            "verdi": round(v, desimaler),
+            "snitt": round(sum(vindu) / len(vindu), desimaler),
+        })
+
     siste_dato, siste_verdi = rader[-1]
     grense = (date.fromisoformat(siste_dato) - timedelta(days=7)).isoformat()
     tidligere = [v for d, v in rader if d <= grense]
     delta = round(siste_verdi - tidligere[-1], desimaler) if tidligere else None
     return serie, round(siste_verdi, desimaler), siste_dato, delta
+
+
+def beregn_mal_fremgang(db, mal_vekt):
+    """Hvor langt Eivin har kommet mot målvekten, og en grov anslått dato
+    han når den på - basert på farten siste 30 dager. Returnerer None hvis
+    ingen målvekt er satt eller ingen vekt er registrert ennå."""
+    if mal_vekt is None:
+        return None
+    forste = db.execute("SELECT dato, vekt_kg FROM vektlogg ORDER BY dato LIMIT 1").fetchone()
+    siste = db.execute("SELECT dato, vekt_kg FROM vektlogg ORDER BY dato DESC LIMIT 1").fetchone()
+    if forste is None or siste is None:
+        return None
+
+    start_vekt = forste["vekt_kg"]
+    naa_vekt = siste["vekt_kg"]
+    gjenstaende = round(naa_vekt - mal_vekt, 1)
+
+    prosent = None
+    if start_vekt != mal_vekt:
+        prosent = round(max(0, min(100, (start_vekt - naa_vekt) / (start_vekt - mal_vekt) * 100)))
+
+    projisert_dato = None
+    tretti_dager_siden = (date.today() - timedelta(days=30)).isoformat()
+    tidlig_rad = db.execute(
+        "SELECT dato, vekt_kg FROM vektlogg WHERE dato <= ? ORDER BY dato DESC LIMIT 1",
+        (tretti_dager_siden,),
+    ).fetchone()
+    if tidlig_rad is None:
+        tidlig_rad = forste
+    dager_span = (date.fromisoformat(siste["dato"]) - date.fromisoformat(tidlig_rad["dato"])).days
+    if dager_span >= 10 and gjenstaende != 0:
+        rate_per_dag = (tidlig_rad["vekt_kg"] - naa_vekt) / dager_span  # positiv = går ned
+        beveger_mot_mal = (gjenstaende > 0 and rate_per_dag > 0) or (gjenstaende < 0 and rate_per_dag < 0)
+        if beveger_mot_mal:
+            dager_igjen = abs(gjenstaende) / abs(rate_per_dag)
+            if dager_igjen < 3650:
+                projisert_dato = (date.today() + timedelta(days=round(dager_igjen))).isoformat()
+
+    return {
+        "mal_vekt_kg": mal_vekt,
+        "start_vekt_kg": start_vekt,
+        "gjenstaende_kg": gjenstaende,
+        "prosent_fullfort": prosent,
+        "projisert_dato": projisert_dato,
+    }
+
+
+def beregn_streak_uker(db, start_dato):
+    """Antall sammenhengende hele uker bakover (til og med forrige uke) der
+    ALLE planlagte økter (utenom hviledager) ble logget som gjennomført
+    eller annen treningsform. Denne uken telles ikke med siden den ikke er
+    ferdig ennå."""
+    i_dag = date.today()
+    mandag_denne_uken = i_dag - timedelta(days=i_dag.isoweekday() - 1)
+    uke_start = mandag_denne_uken - timedelta(days=7)
+    streak = 0
+
+    while uke_start >= start_dato:
+        dager_i_uken = [uke_start + timedelta(days=i) for i in range(7)]
+        har_planlagte = False
+        alle_ok = True
+        for d in dager_i_uken:
+            uke_nummer, ukedag = uke_og_dag(d, start_dato)
+            mal = hent_mal(uke_nummer, ukedag)
+            if mal is None or mal["type"] == "hvile":
+                continue
+            har_planlagte = True
+            logg = db.execute(
+                "SELECT gjennomfort, annen_treningsform FROM dagslogg WHERE dato = ?", (d.isoformat(),)
+            ).fetchone()
+            if not logg or not (logg["gjennomfort"] or logg["annen_treningsform"]):
+                alle_ok = False
+                break
+
+        if not har_planlagte or not alle_ok:
+            break
+
+        streak += 1
+        uke_start -= timedelta(days=7)
+
+    return streak
+
+
+def beregn_innsikt(db, start_dato):
+    """Enkel sammenligning: gikk vekten mer ned i uker med høy
+    treningsgjennomføring enn i uker med lav? Trenger minst 2 uker i hver
+    gruppe for å si noe fornuftig - ellers "ikke nok data ennå"."""
+    i_dag = date.today()
+    mandag_denne_uken = i_dag - timedelta(days=i_dag.isoweekday() - 1)
+    uke_start = mandag_denne_uken - timedelta(days=7)
+    eldste_grense = uke_start - timedelta(days=365)
+
+    hoy, lav = [], []
+    while uke_start >= start_dato and uke_start >= eldste_grense:
+        dager_i_uken = [uke_start + timedelta(days=i) for i in range(7)]
+        dato_strenger = [d.isoformat() for d in dager_i_uken]
+
+        planlagte = 0
+        gjennomfort = 0
+        for d in dager_i_uken:
+            uke_nummer, ukedag = uke_og_dag(d, start_dato)
+            mal = hent_mal(uke_nummer, ukedag)
+            if mal is None or mal["type"] == "hvile":
+                continue
+            planlagte += 1
+            logg = db.execute(
+                "SELECT gjennomfort, annen_treningsform FROM dagslogg WHERE dato = ?", (d.isoformat(),)
+            ).fetchone()
+            if logg and (logg["gjennomfort"] or logg["annen_treningsform"]):
+                gjennomfort += 1
+
+        vekt_rader = db.execute(
+            "SELECT vekt_kg FROM vektlogg WHERE dato IN ({}) ORDER BY dato".format(
+                ",".join("?" * len(dato_strenger))
+            ),
+            dato_strenger,
+        ).fetchall()
+
+        if planlagte > 0 and len(vekt_rader) >= 2:
+            pct = gjennomfort / planlagte * 100
+            delta = vekt_rader[-1]["vekt_kg"] - vekt_rader[0]["vekt_kg"]
+            (hoy if pct >= 80 else lav).append(delta)
+
+        uke_start -= timedelta(days=7)
+
+    if len(hoy) < 2 or len(lav) < 2:
+        return {"nok_data": False}
+
+    return {
+        "nok_data": True,
+        "uker_hoy": len(hoy),
+        "uker_lav": len(lav),
+        "snitt_delta_hoy": round(sum(hoy) / len(hoy), 1),
+        "snitt_delta_lav": round(sum(lav) / len(lav), 1),
+    }
+
+
+def _tilkobling_status(db, tabell):
+    """Status for en Withings/Oura-tilkobling: tilkoblet eller ikke, og en
+    advarsel hvis siste synk feilet eller det er over to døgn siden sist
+    vellykkede synk (tyder på at noe har sluttet å virke i det stille)."""
+    rad = db.execute(f"SELECT sist_synket, siste_feil FROM {tabell} WHERE id = 1").fetchone()
+    if rad is None:
+        return {"tilkoblet": False, "advarsel": False, "melding": None}
+
+    if rad["siste_feil"]:
+        return {"tilkoblet": True, "advarsel": True, "melding": rad["siste_feil"]}
+
+    if rad["sist_synket"]:
+        sist = datetime.fromisoformat(rad["sist_synket"])
+        if datetime.now(timezone.utc) - sist > timedelta(hours=48):
+            return {"tilkoblet": True, "advarsel": True, "melding": "Har ikke synkronisert på over to døgn."}
+
+    return {"tilkoblet": True, "advarsel": False, "melding": None}
 
 
 @app.route("/api/oversikt")
@@ -1197,6 +1414,10 @@ def api_oversikt():
     dager = max(7, min(int(request.args.get("dager", 30)), 365))
     fra_dato = (date.today() - timedelta(days=dager)).isoformat()
     db = get_db()
+
+    innstillinger_rad = db.execute("SELECT start_dato, mal_vekt_kg FROM innstillinger WHERE id = 1").fetchone()
+    start_dato = date.fromisoformat(innstillinger_rad["start_dato"])
+    mal_vekt = innstillinger_rad["mal_vekt_kg"]
 
     def hent(sql, *param):
         return [(r["dato"], r["verdi"]) for r in db.execute(sql, param).fetchall()]
@@ -1249,11 +1470,14 @@ def api_oversikt():
         ("aktivitet", "Aktivitet", "", 0, aktivitet_rader, aktivitet_sekundaer),
     ):
         serie, siste, siste_dato, delta = _serie_og_delta(rader, desimaler)
-        kort.append({
+        kort_data = {
             "id": id_, "navn": navn, "enhet": enhet,
             "siste": siste, "siste_dato": siste_dato, "delta_7d": delta,
             "serie": serie, "sekundaer": sekundaer,
-        })
+        }
+        if id_ == "vekt":
+            kort_data["mal"] = beregn_mal_fremgang(db, mal_vekt)
+        kort.append(kort_data)
 
     trening_fra = (date.today() - timedelta(days=6)).isoformat()
     trening_status = {
@@ -1274,11 +1498,13 @@ def api_oversikt():
 
     return jsonify({
         "tilkoblinger": {
-            "withings": db.execute("SELECT 1 FROM withings_konto WHERE id = 1").fetchone() is not None,
-            "oura": db.execute("SELECT 1 FROM oura_konto WHERE id = 1").fetchone() is not None,
+            "withings": _tilkobling_status(db, "withings_konto"),
+            "oura": _tilkobling_status(db, "oura_konto"),
         },
         "kort": kort,
         "trening_uke": trening_uke,
+        "streak_uker": beregn_streak_uker(db, start_dato),
+        "innsikt": beregn_innsikt(db, start_dato),
     })
 
 
@@ -1495,6 +1721,54 @@ def api_historikk():
             "gjennomfort_prosent": round(100 * gjennomfort_antall / totalt) if totalt else 0,
         },
     })
+
+
+# ---- Målvekt ----
+
+@app.route("/api/mal-vekt", methods=["POST"])
+def api_sett_mal_vekt():
+    data = request.get_json(force=True)
+    verdi = data.get("mal_vekt_kg")
+    db = get_db()
+
+    if verdi in (None, ""):
+        db.execute("UPDATE innstillinger SET mal_vekt_kg = NULL WHERE id = 1")
+        db.commit()
+        return jsonify({"mal_vekt_kg": None})
+
+    try:
+        mal = float(str(verdi).replace(",", "."))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Ugyldig målvekt"}), 400
+
+    db.execute("UPDATE innstillinger SET mal_vekt_kg = ? WHERE id = 1", (mal,))
+    db.commit()
+    return jsonify({"mal_vekt_kg": mal})
+
+
+# ---- Sikkerhetskopi ----
+
+@app.route("/api/backup")
+def api_backup():
+    """Laster ned en trygg, konsistent kopi av hele databasen (VACUUM INTO
+    lager en ferdig, ukorrupt fil selv om noe skulle skje midt i en skriving
+    et annet sted i appen akkurat da)."""
+    db = get_db()
+    fd, midlertidig_sti = mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(midlertidig_sti)  # VACUUM INTO krever at filen ikke finnes fra før
+    db.execute("VACUUM INTO ?", (midlertidig_sti,))
+
+    @after_this_request
+    def rydd_opp(response):
+        try:
+            os.remove(midlertidig_sti)
+        except OSError:
+            pass
+        return response
+
+    filnavn = f"superhuman-backup-{date.today().isoformat()}.db"
+    return send_file(midlertidig_sti, as_attachment=True, download_name=filnavn, mimetype="application/octet-stream")
 
 
 # ---- Vektlogg ----
