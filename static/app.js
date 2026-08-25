@@ -582,6 +582,10 @@ function renderOversiktKort(kortListe, tilkoblinger) {
             )
             .join("")}</div>`
         : "";
+      const sekundaerHint =
+        k.id === "vekt" && k.sekundaer.length
+          ? `<p class="oversikt-kort-hint">Fettmasse + muskelmasse + beinmasse ≈ vekten. Kroppsvann overlapper med disse (ligger allerede inni fett- og muskelmassen), så det skal ikke legges til.</p>`
+          : "";
 
       return `
         <div class="oversikt-kort" ${stil} data-kort="${k.id}">
@@ -596,6 +600,7 @@ function renderOversiktKort(kortListe, tilkoblinger) {
             </div>
           </div>
           ${sekundaerHtml}
+          ${sekundaerHint}
           <div class="oversikt-graf-wrap">
             <div class="graf-tooltip"></div>
           </div>
