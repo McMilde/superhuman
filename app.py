@@ -1407,6 +1407,39 @@ def _tilkobling_status(db, tabell):
     return {"tilkoblet": True, "advarsel": False, "melding": None}
 
 
+@app.route("/api/vekt-detaljer")
+def api_vekt_detaljer():
+    """Full utvikling (ikke bare siste verdi) for hver Withings-måling utenom
+    selve vekten - fettprosent, muskelmasse, kroppsvann osv. Brukes til
+    "Se utvikling"-visningen når man trykker seg inn på Vekt-kortet."""
+    dager = max(7, min(int(request.args.get("dager", 30)), 365))
+    fra_dato = (date.today() - timedelta(days=dager)).isoformat()
+    db = get_db()
+
+    metrikker = []
+    for type_id, (navn, enhet) in WITHINGS_MALETYPER.items():
+        if type_id == 1:
+            continue
+        rader = [
+            (r["dato"], r["verdi"])
+            for r in db.execute(
+                "SELECT dato, verdi FROM withings_malinger WHERE type = ? AND dato >= ? ORDER BY dato",
+                (type_id, fra_dato),
+            ).fetchall()
+        ]
+        desimaler = 1 if enhet in ("kg", "%") else 0
+        serie, siste, siste_dato, delta = _serie_og_delta(rader, desimaler)
+        if siste is None:
+            continue
+        metrikker.append({
+            "id": type_id, "navn": navn, "enhet": enhet,
+            "siste": siste, "siste_dato": siste_dato, "delta_7d": delta,
+            "serie": serie,
+        })
+
+    return jsonify(metrikker)
+
+
 @app.route("/api/oversikt")
 def api_oversikt():
     """Samlet data til dashboardet - én forespørsel i stedet for at
