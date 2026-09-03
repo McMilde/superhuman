@@ -19,6 +19,11 @@
   --metrikk-sovn: #2563eb;
   --metrikk-restitusjon: #db2777;
   --metrikk-aktivitet: #9c6a0a;
+  --metrikk-fett: #d97706;
+  --metrikk-muskel: #0f9169;
+  --metrikk-vann: #0891b2;
+  --metrikk-bein: #6c8880;
+  --metrikk-puls: #dc2626;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +48,11 @@
     --metrikk-sovn: #3b82f6;
     --metrikk-restitusjon: #ec4899;
     --metrikk-aktivitet: #b8863a;
+    --metrikk-fett: #e5a041;
+    --metrikk-muskel: #2fae86;
+    --metrikk-vann: #38bdf8;
+    --metrikk-bein: #86a196;
+    --metrikk-puls: #ff7a6e;
   }
 }
 
@@ -902,3 +912,25 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 .vekt-inline-boks { margin-top: 10px; }
 
 .oversikt-kort .vekt-liste { margin-top: 10px; }
+
+.vekt-detalj-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.vekt-detalj-kort {
+  background: var(--muted-soft);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.vekt-detalj-kort .oversikt-kort-header { align-items: baseline; }
+.vekt-detalj-kort .oversikt-kort-verdi-blokk .oversikt-kort-verdi,
+.vekt-detalj-kort .oversikt-kort-verdi-blokk > span:first-child {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}

@@ -524,6 +524,7 @@ function renderOversiktKort(kortListe, tilkoblinger) {
           <button type="button" class="lenke-knapp" data-vekt-handling="legg-til">+ Registrer vekt</button>
           <button type="button" class="lenke-knapp" data-vekt-handling="mal">Sett målvekt</button>
           <button type="button" class="lenke-knapp" data-vekt-handling="liste">Vis alle registreringer</button>
+          ${k.sekundaer.length ? `<button type="button" class="lenke-knapp" data-vekt-handling="detaljer">Se utvikling i fett, muskler m.m.</button>` : ""}
         </div>
         <div class="vekt-inline-boks hidden" data-vekt-boks="legg-til">
           <form class="inline-form" data-vekt-form="legg-til">
@@ -627,6 +628,10 @@ function settOppVektVerktoy(kortEl) {
   knapper.forEach((knapp) => {
     knapp.addEventListener("click", async () => {
       const valg = knapp.dataset.vektHandling;
+      if (valg === "detaljer") {
+        apneVektDetaljModal();
+        return;
+      }
       if (valg === "liste") {
         const skjult = listeEl.classList.contains("hidden");
         if (skjult) await lastVektListe(listeEl);
@@ -690,6 +695,66 @@ async function lastVektListe(listeEl) {
       await fetch(`/api/vekt/${btn.dataset.id}`, { method: "DELETE" });
       lastOversikt();
     });
+  });
+}
+
+// Fargevariabel per Withings måletype-id (se WITHINGS_MALETYPER i app.py).
+const VEKT_DETALJ_FARGE = {
+  6: "--metrikk-fett", // Fettprosent
+  8: "--metrikk-fett", // Fettmasse
+  76: "--metrikk-muskel", // Muskelmasse
+  77: "--metrikk-vann", // Kroppsvann
+  88: "--metrikk-bein", // Beinmasse
+  11: "--metrikk-puls", // Puls
+};
+
+async function apneVektDetaljModal() {
+  $("vektDetaljModalOverlay").classList.remove("hidden");
+  const listeEl = $("vektDetaljListe");
+  listeEl.innerHTML = `<p class="hint">Laster …</p>`;
+  const res = await fetch(`/api/vekt-detaljer?dager=${oversiktDagerValgt}`);
+  const metrikker = await res.json();
+  renderVektDetaljListe(metrikker);
+}
+
+function lukkVektDetaljModal() {
+  $("vektDetaljModalOverlay").classList.add("hidden");
+}
+
+function renderVektDetaljListe(metrikker) {
+  const listeEl = $("vektDetaljListe");
+  if (metrikker.length === 0) {
+    listeEl.innerHTML = `<p class="hint">Ingen andre målinger fra Withings-vekten i denne perioden ennå.</p>`;
+    return;
+  }
+
+  listeEl.innerHTML = metrikker
+    .map((m) => {
+      const desimaler = m.enhet === "kg" || m.enhet === "%" ? 1 : 0;
+      const deltaHtml =
+        m.delta_7d == null || m.delta_7d === 0
+          ? ""
+          : `<span class="oversikt-kort-delta ${m.delta_7d > 0 ? "opp" : "ned"}">${m.delta_7d > 0 ? "↑" : "↓"} ${Math.abs(m.delta_7d).toFixed(desimaler).replace(".", ",")}${m.enhet}</span>`;
+      return `
+      <div class="vekt-detalj-kort" data-vekt-detalj="${m.id}">
+        <div class="oversikt-kort-header">
+          <div class="oversikt-kort-titler"><h3>${escapeHtml(m.navn)}</h3></div>
+          <div class="oversikt-kort-verdi-blokk">
+            <span>${m.siste.toString().replace(".", ",")}</span><span class="oversikt-kort-enhet">${escapeHtml(m.enhet)}</span>
+            ${deltaHtml}
+          </div>
+        </div>
+        <div class="oversikt-graf-wrap">
+          <div class="graf-tooltip"></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  metrikker.forEach((m) => {
+    const kortEl = listeEl.querySelector(`[data-vekt-detalj="${m.id}"]`);
+    if (!kortEl) return;
+    tegnGraf(kortEl.querySelector(".oversikt-graf-wrap"), m.serie, VEKT_DETALJ_FARGE[m.id] || "--metrikk-vekt", true);
   });
 }
 
@@ -945,6 +1010,10 @@ function main() {
     if (e.target.id === "dagModalOverlay") lukkDagModal();
   });
   $("ovelseModalLoggLagreBtn").addEventListener("click", lagreOvelseLogg);
+  $("vektDetaljLukkBtn").addEventListener("click", lukkVektDetaljModal);
+  $("vektDetaljModalOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "vektDetaljModalOverlay") lukkVektDetaljModal();
+  });
 
   lastDag();
   lastUke();
