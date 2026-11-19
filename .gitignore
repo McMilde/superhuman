@@ -2,3 +2,4 @@ trening.db
 __pycache__/
 *.pyc
 server.log
+.superpowers/
