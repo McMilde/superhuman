@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 import socket
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import coach
 import livsstil
 from flask import (
     Flask, Response, after_this_request, g, jsonify, redirect, request,
@@ -1080,6 +1082,99 @@ def api_historikk():
             ),
         },
     })
+
+
+# ---- Coach, mat og helg ----
+
+def _helgeplan(db, uke_start):
+    rad = db.execute("SELECT * FROM helgeplan WHERE uke_start = ?", (uke_start.isoformat(),)).fetchone()
+    if not rad:
+        return None
+    return {
+        "planlagte_enheter": rad["planlagte_enheter"],
+        "tips": json.loads(rad["tips"] or "[]"),
+        "oppsummering": rad["oppsummering"],
+    }
+
+
+@app.route("/api/i-dag")
+def api_i_dag():
+    db = get_db()
+    i_dag = livsstil.i_dag_oslo()
+    i_dag_str = i_dag.isoformat()
+    melding = coach.hent_eller_lag_dagsmelding(db, i_dag)
+    plan = livsstil.hent_eller_lag_ukeplan(db, livsstil.mandag_for(i_dag), lag_plan=coach.lag_ukeplan_med_claude)
+    return jsonify({
+        "dato": i_dag_str,
+        "ukedag_navn": UKEDAGER[i_dag.isoweekday() - 1],
+        "dagssjekk": livsstil.dagsstatus(db, i_dag_str),
+        "melding": {"tittel": melding["tittel"], "tekst": melding["tekst"], "kilde": melding["kilde"]},
+        "treningsdag": bool(melding["treningsdag"]),
+        "flytt_grunn": melding["flyttet_fra"],
+        "middag": livsstil.middag_for_dag(plan, i_dag_str),
+        "treningsdager": plan["treningsdager"],
+        "alkoholfri_rekke": livsstil.alkoholfrie_hverdager_pa_rad(db, i_dag),
+        "helg": _helgeplan(db, livsstil.mandag_for(i_dag)),
+        "er_fredag_til_sondag": i_dag.isoweekday() >= 5,
+    })
+
+
+@app.route("/api/mat")
+def api_mat():
+    uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
+    return jsonify(livsstil.hent_eller_lag_ukeplan(get_db(), uke_start, lag_plan=coach.lag_ukeplan_med_claude))
+
+
+@app.route("/api/mat/bytt", methods=["POST"])
+def api_mat_bytt():
+    data = request.get_json(force=True) or {}
+    uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
+    try:
+        return jsonify(coach.bytt_middag(get_db(), uke_start, str(data.get("dag") or "")))
+    except ValueError:
+        return jsonify({"error": "Ugyldig dag"}), 400
+
+
+@app.route("/api/coach/chat", methods=["GET"])
+def api_chat_historikk():
+    rader = get_db().execute("SELECT * FROM (SELECT * FROM chat ORDER BY id DESC LIMIT 30) ORDER BY id").fetchall()
+    return jsonify([dict(r) for r in rader])
+
+
+@app.route("/api/coach/chat", methods=["POST"])
+def api_chat():
+    tekst = ((request.get_json(force=True) or {}).get("tekst") or "").strip()
+    if not tekst:
+        return jsonify({"error": "Skriv noe først"}), 400
+    return jsonify({"svar": coach.svar_chat(get_db(), tekst[:2000])})
+
+
+@app.route("/api/coach/vanskelig", methods=["POST"])
+def api_vanskelig():
+    return jsonify({"tekst": coach.vanskelig_na(get_db())})
+
+
+@app.route("/api/helg", methods=["POST"])
+def api_helg():
+    verdi = (request.get_json(force=True) or {}).get("planlagte_enheter")
+    try:
+        enheter = int(verdi)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Skriv et tall"}), 400
+    if isinstance(verdi, bool) or not 0 <= enheter <= 30:
+        return jsonify({"error": "Velg mellom 0 og 30 enheter"}), 400
+    db = get_db()
+    uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
+    tips = coach.helg_tips(db, enheter)
+    db.execute(
+        """
+        INSERT INTO helgeplan (uke_start, planlagte_enheter, tips) VALUES (?, ?, ?)
+        ON CONFLICT(uke_start) DO UPDATE SET planlagte_enheter = excluded.planlagte_enheter, tips = excluded.tips
+        """,
+        (uke_start.isoformat(), enheter, json.dumps(tips, ensure_ascii=False)),
+    )
+    db.commit()
+    return jsonify({"planlagte_enheter": enheter, "tips": tips})
 
 
 # ---- Målvekt ----

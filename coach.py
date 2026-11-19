@@ -333,3 +333,30 @@ def helg_oppsummering(conn, uke_start: date) -> str:
             return f"Du planla {planlagt} enheter og endte på {faktisk:g}. Du holdt planen – godt jobbet!"
         return (f"Du planla {planlagt} enheter og endte på {faktisk:g}. Det skjer. "
                 "Neste helg: kjøp bare inn det du har bestemt, så blir det lettere.")
+
+
+# ---- Felles for API og planlegger ----
+
+def hent_restitusjon(conn, dato: str):
+    rad = conn.execute(
+        "SELECT verdi FROM oura_malinger WHERE type = 'restitusjon_score' AND dato = ?", (dato,)
+    ).fetchone()
+    return rad["verdi"] if rad else None
+
+
+def hent_eller_lag_dagsmelding(conn, i_dag: date) -> dict:
+    """Dagens melding lages én gang per dag og lagres, slik at åpning av appen
+    og morgenvarselet viser det samme (og Claude bare spørres én gang)."""
+    rad = conn.execute("SELECT * FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone()
+    if rad:
+        return dict(rad)
+    plan = livsstil.hent_eller_lag_ukeplan(conn, livsstil.mandag_for(i_dag), lag_plan=lag_ukeplan_med_claude)
+    treningsdag, grunn = livsstil.er_treningsdag_i_dag(conn, i_dag, hent_restitusjon(conn, i_dag.isoformat()))
+    middag = livsstil.middag_for_dag(plan, i_dag.isoformat())
+    melding = lag_dagsmelding(conn, i_dag, treningsdag, grunn, middag)
+    conn.execute(
+        "INSERT OR REPLACE INTO dagsmelding (dato, tittel, tekst, treningsdag, flyttet_fra, kilde) VALUES (?, ?, ?, ?, ?, ?)",
+        (i_dag.isoformat(), melding["tittel"], melding["tekst"], int(treningsdag), grunn, melding["kilde"]),
+    )
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone())
