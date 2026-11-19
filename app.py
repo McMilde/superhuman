@@ -11,6 +11,8 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import requests
+
+import livsstil
 from flask import (
     Flask, Response, after_this_request, g, jsonify, redirect, request,
     send_file, session, url_for,
@@ -309,6 +311,7 @@ def init_db():
     )
 
     conn.commit()
+    livsstil.opprett_tabeller(conn)
     conn.close()
 
 
@@ -843,14 +846,41 @@ def beregn_mal_fremgang(db, mal_vekt):
     }
 
 
-def beregn_streak_uker(db, start_dato):
-    """Midlertidig: erstattes av alkoholfri-rekke i livsstil.py."""
-    return 0
-
-
 def beregn_innsikt(db, start_dato):
-    """Midlertidig: erstattes av alkoholbasert innsikt."""
-    return {"nok_data": False}
+    """Enkel sammenligning: gikk vekten mer ned i uker med mange alkoholfrie
+    dager (minst 5 av 7) enn i uker med færre? Trenger minst 2 uker i hver
+    gruppe for å si noe fornuftig - ellers "ikke nok data ennå"."""
+    i_dag = livsstil.i_dag_oslo()
+    uke_start = livsstil.mandag_for(i_dag) - timedelta(days=7)
+    eldste_grense = uke_start - timedelta(days=365)
+
+    hoy, lav = [], []
+    while uke_start >= start_dato and uke_start >= eldste_grense:
+        dato_strenger = [(uke_start + timedelta(days=i)).isoformat() for i in range(7)]
+        sjekker = db.execute(
+            "SELECT alkohol FROM dagssjekk WHERE dato IN ({})".format(",".join("?" * 7)),
+            dato_strenger,
+        ).fetchall()
+        vekt_rader = db.execute(
+            "SELECT vekt_kg FROM vektlogg WHERE dato IN ({}) ORDER BY dato".format(",".join("?" * 7)),
+            dato_strenger,
+        ).fetchall()
+        if len(sjekker) >= 5 and len(vekt_rader) >= 2:
+            alkoholfrie = sum(1 for r in sjekker if not r["alkohol"])
+            delta = vekt_rader[-1]["vekt_kg"] - vekt_rader[0]["vekt_kg"]
+            (hoy if alkoholfrie >= 5 else lav).append(delta)
+        uke_start -= timedelta(days=7)
+
+    if len(hoy) < 2 or len(lav) < 2:
+        return {"nok_data": False}
+
+    return {
+        "nok_data": True,
+        "uker_hoy": len(hoy),
+        "uker_lav": len(lav),
+        "snitt_delta_hoy": round(sum(hoy) / len(hoy), 1),
+        "snitt_delta_lav": round(sum(lav) / len(lav), 1),
+    }
 
 
 def _tilkobling_status(db, tabell):
@@ -977,21 +1007,15 @@ def api_oversikt():
             kort_data["mal"] = beregn_mal_fremgang(db, mal_vekt)
         kort.append(kort_data)
 
-    trening_fra = (date.today() - timedelta(days=6)).isoformat()
-    trening_status = {
-        r["dato"]: bool(r["gjennomfort"])
-        for r in db.execute(
-            "SELECT dato, gjennomfort FROM dagslogg WHERE dato >= ?", (trening_fra,)
-        ).fetchall()
-    }
+    i_dag = livsstil.i_dag_oslo()
     trening_uke = []
     for i in range(6, -1, -1):
-        d = date.today() - timedelta(days=i)
-        d_str = d.isoformat()
+        d = i_dag - timedelta(days=i)
+        status = livsstil.dagsstatus(db, d.isoformat())
         trening_uke.append({
-            "dato": d_str,
+            "dato": d.isoformat(),
             "ukedag_kort": UKEDAGER[d.isoweekday() - 1][:2],
-            "gjennomfort": trening_status.get(d_str),
+            "gjennomfort": bool(status["trent"]) if status else None,
         })
 
     return jsonify({
@@ -1001,16 +1025,61 @@ def api_oversikt():
         },
         "kort": kort,
         "trening_uke": trening_uke,
-        "streak_uker": beregn_streak_uker(db, start_dato),
+        "alkoholfri_rekke": livsstil.alkoholfrie_hverdager_pa_rad(db, i_dag),
         "innsikt": beregn_innsikt(db, start_dato),
     })
 
 
 # ---- Historikk ----
 
+@app.route("/api/dagssjekk", methods=["GET"])
+def api_hent_dagssjekk():
+    dato = request.args.get("dato") or livsstil.i_dag_oslo().isoformat()
+    return jsonify(livsstil.dagsstatus(get_db(), dato))
+
+
+@app.route("/api/dagssjekk", methods=["POST"])
+def api_lagre_dagssjekk():
+    data = request.get_json(force=True) or {}
+    dato = data.get("dato") or livsstil.i_dag_oslo().isoformat()
+    try:
+        rad = livsstil.lagre_dagssjekk(
+            get_db(), dato, data.get("fastet"), data.get("alkohol"), data.get("alkohol_enheter"),
+            data.get("trent"), data.get("syk"), data.get("notat"),
+        )
+    except ValueError:
+        return jsonify({"error": "Ugyldig dato"}), 400
+    return jsonify(rad)
+
+
 @app.route("/api/historikk")
 def api_historikk():
-    return jsonify({"dager": [], "stats": {}})
+    db = get_db()
+    datoer = sorted(
+        {r["dato"] for r in db.execute("SELECT dato FROM dagssjekk")}
+        | {r["dato"] for r in db.execute("SELECT dato FROM dagslogg")},
+        reverse=True,
+    )
+    dager = []
+    for dato in datoer:
+        status = livsstil.dagsstatus(db, dato)
+        status["ukedag_navn"] = UKEDAGER[date.fromisoformat(dato).isoweekday() - 1]
+        dager.append(status)
+
+    grense = (livsstil.i_dag_oslo() - timedelta(days=30)).isoformat()
+    siste = [d for d in dager if d["dato"] >= grense]
+    hverdager = [d for d in siste if date.fromisoformat(d["dato"]).isoweekday() <= 4]
+    return jsonify({
+        "dager": dager,
+        "stats": {
+            "totalt_registrert": len(siste),
+            "fastedager": sum(1 for d in siste if d["fastet"]),
+            "treningsdager": sum(1 for d in siste if d["trent"]),
+            "alkoholfrie_hverdager_prosent": (
+                round(100 * sum(1 for d in hverdager if not d["alkohol"]) / len(hverdager)) if hverdager else 0
+            ),
+        },
+    })
 
 
 # ---- Målvekt ----
