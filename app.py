@@ -1209,6 +1209,29 @@ def api_push_test():
     return jsonify({"sendt": sendt})
 
 
+@app.route("/api/innstillinger/varsler", methods=["GET"])
+def api_hent_varseltider():
+    return jsonify(varsler.hent_tider(get_db()))
+
+
+@app.route("/api/innstillinger/varsler", methods=["POST"])
+def api_lagre_varseltider():
+    try:
+        return jsonify(varsler.lagre_tider(get_db(), request.get_json(force=True) or {}))
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+
+
+def _synk_alt():
+    """Henter ferske tall fra Withings og Oura før morgenmeldingen."""
+    with app.app_context():
+        for synk in (withings_synk, oura_synk):
+            try:
+                synk()
+            except Exception as feil:
+                print(f"Synk feilet: {feil}")
+
+
 # ---- Målvekt ----
 
 @app.route("/api/mal-vekt", methods=["POST"])
@@ -1323,6 +1346,9 @@ KJORER_I_SKYEN = "PORT" in os.environ
 # over __main__-blokken under, så databasen må klargjøres her i stedet.
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 init_db()
+
+if os.environ.get("PLANLEGGER", "1") == "1":
+    varsler.start_planlegger(DB_PATH, synk=_synk_alt)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5003))
