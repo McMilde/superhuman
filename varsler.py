@@ -59,7 +59,7 @@ def _webpush_sender(conn):
 
     def send(sub_info, data):
         webpush(subscription_info=sub_info, data=data, vapid_private_key=vapid,
-                vapid_claims={"sub": VAPID_SUB}, ttl=6 * 3600)
+                vapid_claims={"sub": VAPID_SUB}, ttl=6 * 3600, timeout=15)
     return send
 
 

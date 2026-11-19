@@ -21,7 +21,11 @@ def test_i_dag_uten_nokkel_gir_reserve(client):
         assert felt in data
 
 
-def test_i_dag_lagres_og_gjenbrukes(client, monkeypatch):
+def test_i_dag_lagres_og_gjenbrukes(client, db, monkeypatch):
+    # Med Oura-data for i dag lagres meldingen uansett klokkeslett.
+    db.execute("INSERT INTO oura_malinger (dato, type, verdi) VALUES (?, 'restitusjon_score', 85)",
+               (livsstil.i_dag_oslo().isoformat(),))
+    db.commit()
     client.get("/api/i-dag")
     kall = []
     monkeypatch.setattr(coach, "lag_dagsmelding", lambda *a, **k: kall.append(1) or {})

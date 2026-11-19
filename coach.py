@@ -6,7 +6,7 @@ alltid tilbake på reserve, slik at appen aldri står tom.
 """
 import os
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 
@@ -62,7 +62,7 @@ Tone:
 """
 
 
-def sporr_claude(system: str, melding: str, utdata, effort: str, historikk=None):
+def sporr_claude(system: str, melding: str, utdata, effort: str, historikk=None, tidsavbrudd: int = 40):
     """Eneste funksjon som kaller Anthropic. Returnerer en utfylt pydantic-modell
     (når `utdata` er gitt) eller tekst. Kaster CoachUtilgjengelig ved alt som
     ikke gir et brukbart svar."""
@@ -71,7 +71,9 @@ def sporr_claude(system: str, melding: str, utdata, effort: str, historikk=None)
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=60, max_retries=2)
+        # Kort tidsavbrudd og ett nytt forsøk, så reserveteksten kommer raskt
+        # hvis Claude er treg. Ukemenyen lages i bakgrunnen og får mer tid.
+        client = anthropic.Anthropic(timeout=tidsavbrudd, max_retries=1)
         meldinger = list(historikk or []) + [{"role": "user", "content": melding}]
         felles = dict(
             model=MODELL,
@@ -173,8 +175,10 @@ RESERVE_DAG = [
 ]
 
 
-def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag) -> dict:
+def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag, kun_reserve=False) -> dict:
     try:
+        if kun_reserve:
+            raise CoachUtilgjengelig("før morgenmeldingen")
         oppgave = (
             "Skriv dagens morgenmelding til Eivin. Tittel: maks 6 ord. Tekst: 2-4 korte setninger. "
             f"Treningsdag i dag: {'ja' if treningsdag else 'nei'}. "
@@ -202,28 +206,48 @@ def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag) -
 
 # ---- Ukeplan og middager ----
 
+def _be_om_meny(conn, uke_start: date, forslag: int):
+    oppgave = (
+        f"Lag ukeplan for uka som starter {uke_start.isoformat()}: nøyaktig 5 middager (mandag-fredag), "
+        "raske (maks 30 min), sunne og barnevennlige, med enkel ingrediensliste (norske navn, med mengde). "
+        "Varier fisk, kylling og kjøtt. Lag én lunsj som lages søndag og holder i 4-5 dager i matboks, og 4 tips "
+        "til mettende pålegg på surdeigsbrød. Velg antall treningsdager (2-5); "
+        f"forslaget basert på forrige uke er {forslag}.\n\n" + lag_sammendrag(conn, uke_start)
+    )
+    meny = sporr_claude(SYSTEM_PROMPT, oppgave, Ukemeny, "medium", tidsavbrudd=150)
+    if len(meny.middager) < 5:
+        raise CoachUtilgjengelig("for få middager")
+    lunsj = {**meny.lunsj.model_dump(), "brodtips": meny.brodtips}
+    return meny, [m.model_dump() for m in meny.middager[:5]], lunsj
+
+
 def lag_ukeplan_med_claude(conn, uke_start: date) -> dict:
+    """Brukes av planleggeren (bakgrunnstråd). Faller tilbake på reserveplan."""
     forslag = livsstil.neste_antall_trening(conn, uke_start)
     try:
-        oppgave = (
-            f"Lag ukeplan for uka som starter {uke_start.isoformat()}: nøyaktig 5 middager (mandag-fredag), "
-            "raske (maks 30 min), sunne og barnevennlige, med enkel ingrediensliste (norske navn, med mengde). "
-            "Varier fisk, kylling og kjøtt. Lag én lunsj som lages søndag og holder i 4-5 dager i matboks, og 4 tips "
-            "til mettende pålegg på surdeigsbrød. Velg antall treningsdager (2-5); "
-            f"forslaget basert på forrige uke er {forslag}.\n\n" + lag_sammendrag(conn, uke_start)
-        )
-        meny = sporr_claude(SYSTEM_PROMPT, oppgave, Ukemeny, "medium")
-        if len(meny.middager) < 5:
-            raise CoachUtilgjengelig("for få middager")
+        meny, middager, lunsj = _be_om_meny(conn, uke_start, forslag)
     except CoachUtilgjengelig:
         return livsstil.lag_reserveplan(conn, uke_start)
     antall = max(forslag - 1, min(forslag + 1, meny.antall_trening))
     antall = max(2, min(5, antall))
-    lunsj = {**meny.lunsj.model_dump(), "brodtips": meny.brodtips}
     return livsstil.lagre_ukeplan(
         conn, uke_start, livsstil.velg_treningsdager(uke_start, antall),
-        [m.model_dump() for m in meny.middager[:5]], lunsj, "claude", antall_trening=antall,
+        middager, lunsj, "claude", antall_trening=antall,
     )
+
+
+def oppgrader_ukeplan(conn, uke_start: date):
+    """Bytter ut menyen i en reserveplan med en fra Claude, men beholder
+    treningsdagene (de kan allerede være vist til Eivin). None ved feil."""
+    plan = livsstil.hent_ukeplan(conn, uke_start)
+    if plan is None or plan["kilde"] != "reserve":
+        return plan
+    try:
+        _, middager, lunsj = _be_om_meny(conn, uke_start, plan["antall_trening"])
+    except CoachUtilgjengelig:
+        return None
+    return livsstil.lagre_ukeplan(conn, uke_start, plan["treningsdager"], middager, lunsj, "claude",
+                                  antall_trening=plan["antall_trening"])
 
 
 def bytt_middag(conn, uke_start: date, dag: str) -> dict:
@@ -344,15 +368,32 @@ def hent_restitusjon(conn, dato: str):
     return rad["verdi"] if rad else None
 
 
-def hent_eller_lag_dagsmelding(conn, i_dag: date) -> dict:
+def hent_eller_lag_dagsmelding(conn, i_dag: date, naa=None) -> dict:
     """Dagens melding lages én gang per dag og lagres, slik at åpning av appen
-    og morgenvarselet viser det samme (og Claude bare spørres én gang)."""
+    og morgenvarselet viser det samme (og Claude bare spørres én gang).
+
+    Åpnes appen før morgentidspunktet og Oura ikke har levert dagens
+    restitusjon ennå, lagres ingenting: da får morgenjobben (som synker Oura
+    først) avgjøre om treningen skal flyttes."""
+    import varsler
+
     rad = conn.execute("SELECT * FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone()
     if rad:
         return dict(rad)
-    plan = livsstil.hent_eller_lag_ukeplan(conn, livsstil.mandag_for(i_dag), lag_plan=lag_ukeplan_med_claude)
-    treningsdag, grunn = livsstil.er_treningsdag_i_dag(conn, i_dag, hent_restitusjon(conn, i_dag.isoformat()))
+    naa = naa or datetime.now(livsstil.OSLO)
+    plan = livsstil.hent_eller_lag_ukeplan(conn, livsstil.mandag_for(i_dag))
     middag = livsstil.middag_for_dag(plan, i_dag.isoformat())
+    restitusjon = hent_restitusjon(conn, i_dag.isoformat())
+
+    t, m = (int(x) for x in varsler.hent_tider(conn)["morgen"].split(":"))
+    for_morgen = naa.date() == i_dag and (naa.hour, naa.minute) < (t, m)
+    if restitusjon is None and for_morgen:
+        treningsdag = i_dag.isoformat() in plan["treningsdager"]
+        melding = lag_dagsmelding(conn, i_dag, treningsdag, None, middag, kun_reserve=True)
+        return {"dato": i_dag.isoformat(), "tittel": melding["tittel"], "tekst": melding["tekst"],
+                "treningsdag": int(treningsdag), "flyttet_fra": None, "kilde": melding["kilde"]}
+
+    treningsdag, grunn = livsstil.er_treningsdag_i_dag(conn, i_dag, restitusjon)
     melding = lag_dagsmelding(conn, i_dag, treningsdag, grunn, middag)
     conn.execute(
         "INSERT OR REPLACE INTO dagsmelding (dato, tittel, tekst, treningsdag, flyttet_fra, kilde) VALUES (?, ?, ?, ?, ?, ?)",

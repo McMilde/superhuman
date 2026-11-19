@@ -1098,13 +1098,47 @@ def _helgeplan(db, uke_start):
     }
 
 
+_OPPGRADERING_FORSOK = {}
+
+
+def _start_oppgradering(uke_start):
+    """Lager Claude-meny for en reserveplan i bakgrunnen, så siden aldri venter
+    på Claude. Prøver maks én gang per halvtime per uke."""
+    import threading
+    import time
+
+    nokkel = uke_start.isoformat()
+    if time.time() - _OPPGRADERING_FORSOK.get(nokkel, 0) < 1800:
+        return
+    _OPPGRADERING_FORSOK[nokkel] = time.time()
+
+    def jobb():
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            coach.oppgrader_ukeplan(conn, uke_start)
+        except Exception as feil:
+            print(f"Oppgradering av ukeplan feilet: {feil}")
+        finally:
+            conn.close()
+
+    threading.Thread(target=jobb, name="ukeplan-oppgradering", daemon=True).start()
+
+
+def _hent_ukeplan(db, uke_start):
+    plan = livsstil.hent_eller_lag_ukeplan(db, uke_start)
+    if plan["kilde"] == "reserve" and os.environ.get("ANTHROPIC_API_KEY"):
+        _start_oppgradering(uke_start)
+    return plan
+
+
 @app.route("/api/i-dag")
 def api_i_dag():
     db = get_db()
     i_dag = livsstil.i_dag_oslo()
     i_dag_str = i_dag.isoformat()
     melding = coach.hent_eller_lag_dagsmelding(db, i_dag)
-    plan = livsstil.hent_eller_lag_ukeplan(db, livsstil.mandag_for(i_dag), lag_plan=coach.lag_ukeplan_med_claude)
+    plan = _hent_ukeplan(db, livsstil.mandag_for(i_dag))
     return jsonify({
         "dato": i_dag_str,
         "ukedag_navn": UKEDAGER[i_dag.isoweekday() - 1],
@@ -1123,7 +1157,7 @@ def api_i_dag():
 @app.route("/api/mat")
 def api_mat():
     uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
-    return jsonify(livsstil.hent_eller_lag_ukeplan(get_db(), uke_start, lag_plan=coach.lag_ukeplan_med_claude))
+    return jsonify(_hent_ukeplan(get_db(), uke_start))
 
 
 @app.route("/api/mat/bytt", methods=["POST"])
