@@ -2,3 +2,6 @@ flask
 gunicorn
 requests
 tzdata
+anthropic>=0.121
+pywebpush
+pytest

@@ -21,7 +21,7 @@
   <header class="topbar">
     <div>
       <h1>Superhuman 2.0</h1>
-      <p class="tagline" id="faseTagline">Laster …</p>
+      <p class="tagline" id="toppDato">&nbsp;</p>
     </div>
   </header>
 
@@ -30,13 +30,13 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
       <span>I dag</span>
     </button>
+    <button class="tab" data-tab="mat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v8a3 3 0 0 0 3 3v7"/><path d="M10 3v8a3 3 0 0 1-3 3"/><path d="M7 3v6"/><path d="M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v4H17"/></svg>
+      <span>Mat</span>
+    </button>
     <button class="tab" data-tab="oversikt">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
       <span>Oversikt</span>
-    </button>
-    <button class="tab" data-tab="fysio">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 6.6a4.8 4.8 0 0 0-7-4.4 4.8 4.8 0 0 0-7 4.4c0 3.6 3.6 6 7 9.4 3.4-3.4 7-5.8 7-9.4z"/></svg>
-      <span>Fysio</span>
     </button>
     <button class="tab" data-tab="historikk">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 3.5"/></svg>
@@ -47,84 +47,108 @@
   <main>
     <!-- I DAG -->
     <section id="tab-idag" class="tab-panel active">
-      <div class="card sitat-card">
-        <p id="dagensSitat" class="sitat-tekst">–</p>
+      <article class="coach-kort" id="coachKort">
+        <h2 class="coach-tittel" id="coachTittel">Henter dagens beskjed …</h2>
+        <p class="coach-tekst" id="coachTekst"></p>
+        <p class="coach-flytt hidden" id="coachFlytt"></p>
+        <div class="coach-knapper">
+          <button type="button" class="coach-knapp" id="sporCoachBtn">Spør coachen</button>
+          <button type="button" class="coach-knapp coach-knapp-rolig" id="vanskeligBtn">Det er vanskelig nå</button>
+        </div>
+      </article>
+
+      <div class="card vanskelig-kort hidden" id="vanskeligKort">
+        <p id="vanskeligTekst"></p>
+        <button type="button" class="lenke-knapp" id="vanskeligLukk">Takk, det hjalp</button>
       </div>
 
-      <div class="card" id="oktCard">
+      <div class="card varsel-kort hidden" id="varselKort">
+        <h2>Få påminnelser på telefonen</h2>
+        <p class="hint" id="varselHint">Coachen sender deg en beskjed om morgenen, et middagsforslag og en påminnelse om å krysse av dagen.</p>
+        <button type="button" class="btn primary" id="slaPaVarslerBtn">Slå på varsler</button>
+      </div>
+
+      <div class="card">
         <div class="card-header">
-          <h2 id="oktDagNavn">–</h2>
-          <span class="badge" id="oktType"></span>
+          <h2>Hvordan var dagen?</h2>
+          <span class="hint lagret-hint hidden" id="sjekkLagret">Lagret</span>
         </div>
-        <p class="okt-beskrivelse" id="oktBeskrivelse"></p>
-        <div id="oktOvelserBlokk" class="info-blokk hidden">
-          <h3 id="oktOvelserTittel">Øvelser</h3>
-          <div id="oktOvelserListe" class="ovelse-chip-liste"></div>
+        <div class="sjekk-grid" id="sjekkGrid">
+          <button type="button" class="sjekk-rute" data-felt="fastet" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>
+            <span>Fastet</span>
+          </button>
+          <button type="button" class="sjekk-rute sjekk-alkohol" data-felt="alkohol" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 15v7"/><path d="M6 3h12l-1 7a5 5 0 0 1-10 0z"/></svg>
+            <span>Alkohol</span>
+          </button>
+          <button type="button" class="sjekk-rute" data-felt="trent" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M6.5 12h11"/><path d="M3 9v6"/><path d="M21 9v6"/></svg>
+            <span>Trent</span>
+          </button>
+          <button type="button" class="sjekk-rute sjekk-syk" data-felt="syk" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/></svg>
+            <span>Syk</span>
+          </button>
         </div>
-        <div id="fysioIdagBlokk" class="info-blokk hidden">
-          <h3>Fysio-øvelser</h3>
-          <ul id="fysioIdagListe" class="enkel-liste"></ul>
-        </div>
+        <label class="enheter-rad hidden" id="enheterRad">Antall enheter
+          <input type="text" id="alkoholEnheter" inputmode="decimal" placeholder="F.eks. 2" />
+        </label>
+        <label class="notat-rad">Notat (valgfritt)
+          <textarea id="sjekkNotat" rows="2" placeholder="Noe du vil huske om i dag?"></textarea>
+        </label>
+        <p class="rekke" id="alkoholfriRekke"></p>
       </div>
 
-      <div class="card">
-        <h2>Denne uken</h2>
-        <div id="ukeGridMini" class="uke-grid"></div>
-      </div>
-
-      <div class="card">
-        <h2>Registrer dagen</h2>
-        <form id="dagsloggForm">
-          <div class="segmented-toggle toggle-3" id="gjennomfortToggle">
-            <button type="button" class="segment segment-ja" data-val="gjennomfort">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-              Gjennomført
-            </button>
-            <button type="button" class="segment segment-annet" data-val="annet">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-              Annen økt
-            </button>
-            <button type="button" class="segment segment-nei" data-val="ikke_gjennomfort">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-              Ikke gjort
-            </button>
-          </div>
-          <input type="hidden" id="gjennomfort" value="" />
-
-          <div id="annenTreningsformBlokk" class="hidden">
-            <label>Hva gjorde du i stedet, og hvorfor?
-              <textarea id="treningsformBegrunnelse" rows="2" placeholder="F.eks. Gikk en tur i stedet for å ro - godt vær ute"></textarea>
+      <div class="card helg-kort hidden" id="helgKort">
+        <h2>Helgeplan</h2>
+        <div id="helgSkjema">
+          <p class="hint">Bestem nå, mens du er edru: hvor mange enheter skal du ha fra fredag til søndag?</p>
+          <div class="inline-form">
+            <label>Enheter
+              <input type="text" id="helgEnheter" inputmode="numeric" placeholder="F.eks. 4" />
             </label>
+            <button type="button" class="btn primary" id="helgLagreBtn">Lagre plan</button>
           </div>
-          <div id="ikkeGjennomfortBlokk" class="hidden">
-            <label>Hvorfor ble ikke økten gjennomført?
-              <textarea id="ikkeGjennomfortBegrunnelse" rows="2" placeholder="F.eks. For lite tid, følte meg sliten, osv."></textarea>
-            </label>
-          </div>
-
-          <label class="toggle-row" id="fysioGjortRow">
-            <span>Jeg gjorde fysio-øvelsene</span>
-            <span class="ios-switch">
-              <input type="checkbox" id="fysioGjort" />
-              <span class="ios-switch-track"></span>
-            </span>
-          </label>
-          <label>Notater (valgfritt)
-            <textarea id="dagsloggNotater" rows="2" placeholder="F.eks. hvordan det føltes, vekt brukt på øvelser, osv."></textarea>
-          </label>
-          <button type="submit" class="btn primary">Lagre dagen</button>
-        </form>
-        <p id="dagsloggStatus" class="hint hidden"></p>
+          <p class="feiltekst hidden" id="helgFeil"></p>
+        </div>
+        <div id="helgVisning" class="hidden">
+          <p class="helg-tall"><strong id="helgTall"></strong> enheter denne helgen</p>
+          <ul id="helgTips" class="tips-liste"></ul>
+          <button type="button" class="lenke-knapp" id="helgEndreBtn">Endre antall</button>
+        </div>
+        <p class="helg-oppsummering hidden" id="helgOppsummering"></p>
       </div>
+
+      <div class="card middag-kort" id="middagKort">
+        <h2>Middag i dag</h2>
+        <p class="middag-navn" id="middagNavn">–</p>
+        <p class="hint" id="middagInfo"></p>
+      </div>
+
+      <p class="innstillinger-lenke"><button type="button" class="lenke-knapp" id="varseltiderBtn">Varseltider</button></p>
     </section>
 
-    <!-- FYSIO -->
-    <section id="tab-fysio" class="tab-panel">
+    <!-- MAT -->
+    <section id="tab-mat" class="tab-panel">
       <div class="card">
-        <h2>Øvelser fra fysioterapeut</h2>
-        <p class="hint">Legg til øvelsene du får av fysioterapeuten her, så dukker de opp under "I dag" hver treningsdag. Skru av en øvelse i stedet for å slette den hvis du bare skal ta en pause fra den.</p>
-        <ul id="fysioListe" class="fysio-liste"></ul>
-        <button type="button" id="nyFysioBtn" class="btn primary">+ Legg til øvelse</button>
+        <h2>Middager denne uka</h2>
+        <p class="hint">Raske middager hele familien kan spise. Trykk «Bytt» hvis noe ikke frister.</p>
+        <ul id="middagListe" class="middag-liste"></ul>
+      </div>
+      <div class="card">
+        <h2 id="lunsjNavn">Lunsj i bokser</h2>
+        <p class="hint" id="lunsjInfo"></p>
+        <p id="lunsjBeskrivelse"></p>
+        <h3 class="under-tittel">Gode pålegg på surdeigsbrød</h3>
+        <ul id="brodtips" class="tips-liste"></ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Handleliste</h2>
+          <button type="button" class="lenke-knapp" id="nullstillHandleliste">Fjern avkrysning</button>
+        </div>
+        <ul id="handleliste" class="handleliste"></ul>
       </div>
     </section>
 
@@ -143,7 +167,7 @@
 
       <div class="card trening-uke-card">
         <div class="trening-uke-header">
-          <h2>Trening denne uken</h2>
+          <h2>Trening siste 7 dager</h2>
           <span id="treningUkeAntall" class="hint"></span>
         </div>
         <p id="streakTekst" class="hint hidden"></p>
@@ -170,88 +194,46 @@
       </div>
       <div class="card">
         <h2>Data</h2>
-        <p class="hint">Alt appen har lagret (trening, vekt, søvn osv.) i én fil, som en trygghetskopi.</p>
+        <p class="hint">Alt appen har lagret (avkrysninger, vekt, søvn, menyer osv.) i én fil, som en trygghetskopi.</p>
         <a href="/api/backup" class="btn">Last ned sikkerhetskopi</a>
       </div>
     </section>
   </main>
 
-  <div id="modalOverlay" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="fysioModalTitle">Ny øvelse</h2>
+  <div id="chatOverlay" class="modal-overlay hidden">
+    <div class="modal chat-modal">
+      <div class="modal-header card-header">
+        <h2>Spør coachen</h2>
+        <button type="button" class="lenke-knapp" id="chatLukkBtn">Lukk</button>
       </div>
-      <form id="fysioForm">
-        <input type="hidden" id="fysioId" />
-        <label>Navn <span class="pakrevd">— må fylles ut</span>
-          <input type="text" id="fysioNavn" required placeholder="F.eks. Katt og kamel" />
-        </label>
-        <label>Beskrivelse (valgfritt)
-          <textarea id="fysioBeskrivelse" rows="3" placeholder="F.eks. 2 sett x 10 reps, som vist av fysioterapeuten"></textarea>
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="fysioAktiv" checked />
-          Aktiv (vises under "I dag")
-        </label>
-        <div class="modal-actions">
-          <button type="button" id="fysioDeleteBtn" class="btn danger hidden">Slett</button>
-          <div class="spacer"></div>
-          <button type="button" id="fysioCancelBtn" class="btn">Avbryt</button>
-          <button type="submit" class="btn primary">Lagre</button>
-        </div>
+      <div id="chatLogg" class="chat-logg"></div>
+      <form id="chatForm" class="chat-form">
+        <textarea id="chatTekst" rows="2" placeholder="F.eks. Hva kan jeg spise til kvelds?"></textarea>
+        <button type="submit" class="btn primary" id="chatSendBtn">Send</button>
       </form>
     </div>
   </div>
 
-
-  <div id="dagModalOverlay" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header card-header">
-        <h2 id="dagModalTittel">Dag</h2>
-        <span class="badge" id="dagModalType"></span>
-      </div>
-      <p class="okt-beskrivelse" id="dagModalBeskrivelse"></p>
-      <div id="dagModalOvelserBlokk" class="info-blokk hidden">
-        <h3 id="dagModalOvelserTittel">Øvelser</h3>
-        <div id="dagModalOvelserListe" class="ovelse-chip-liste"></div>
-      </div>
-      <div class="modal-actions">
-        <div class="spacer"></div>
-        <button type="button" id="dagModalLukkBtn" class="btn primary">Lukk</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="ovelseModalOverlay" class="modal-overlay hidden">
+  <div id="tiderOverlay" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <h2 id="ovelseModalTittel">Øvelse</h2>
+        <h2>Varseltider</h2>
+        <p class="hint">Når coachen skal sende deg beskjeder.</p>
       </div>
-      <div id="ovelseModalSvg" class="ovelse-illustrasjon"></div>
-      <ol id="ovelseModalSteg" class="ovelse-steg"></ol>
-      <div class="ovelse-fokus">
-        <strong>Pass på:</strong> <span id="ovelseModalFokus"></span>
-      </div>
-
-      <div id="ovelseModalLoggBlokk" class="ovelse-logg hidden">
-        <h3>Logg dagens vekt</h3>
-        <p id="ovelseModalSistBrukt" class="hint"></p>
-        <div class="inline-form">
-          <label>Vekt (kg)
-            <input type="text" id="ovelseModalVekt" inputmode="decimal" placeholder="F.eks. 8" />
-          </label>
-          <label>Reps
-            <input type="text" id="ovelseModalReps" inputmode="numeric" placeholder="F.eks. 12" />
-          </label>
-          <button type="button" id="ovelseModalLoggLagreBtn" class="btn primary">Lagre</button>
+      <form id="tiderForm" class="tider-form">
+        <label>Morgenbeskjed <input type="time" name="morgen" required /></label>
+        <label>Middagsforslag (hverdager) <input type="time" name="middag" required /></label>
+        <label>Helgeplan (fredag) <input type="time" name="helg" required /></label>
+        <label>Kryss av dagen (kveld) <input type="time" name="kveld" required /></label>
+        <label>Ny ukemeny (søndag) <input type="time" name="sondag" required /></label>
+        <p class="feiltekst hidden" id="tiderFeil"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="testVarselBtn">Send testvarsel</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn" id="tiderAvbryt">Avbryt</button>
+          <button type="submit" class="btn primary">Lagre tider</button>
         </div>
-        <p id="ovelseModalLoggStatus" class="hint hidden">Lagret!</p>
-      </div>
-
-      <div class="modal-actions">
-        <div class="spacer"></div>
-        <button type="button" id="ovelseLukkBtn" class="btn primary">Lukk</button>
-      </div>
+      </form>
     </div>
   </div>
 

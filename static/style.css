@@ -24,6 +24,12 @@
   --metrikk-vann: #0891b2;
   --metrikk-bein: #6c8880;
   --metrikk-puls: #dc2626;
+  --coach-bg: #1f7a5c;
+  --coach-tekst: #ffffff;
+  --coach-dempet: rgba(255, 255, 255, 0.82);
+  --trening-bg: #123d30;
+  --trening-tittel: #f4b740;
+  --chat-meg: #1f7a5c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -53,6 +59,12 @@
     --metrikk-vann: #38bdf8;
     --metrikk-bein: #86a196;
     --metrikk-puls: #ff7a6e;
+    --coach-bg: #1b6b51;
+    --coach-tekst: #ffffff;
+    --coach-dempet: rgba(255, 255, 255, 0.8);
+    --trening-bg: #0c2b22;
+    --trening-tittel: #f6c25a;
+    --chat-meg: #2fae86;
   }
 }
 
@@ -278,7 +290,8 @@ main {
 
 .hidden { display: none !important; }
 
-form label {
+form label,
+.card label {
   display: block;
   font-size: 13px;
   font-weight: 700;
@@ -288,14 +301,17 @@ form label {
 
 form input[type="text"],
 form input[type="date"],
+form input[type="time"],
 form select,
-form textarea {
+form textarea,
+.card input[type="text"],
+.card textarea {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   background: var(--panel);
   color: var(--text);
 }
@@ -934,3 +950,374 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ---------- Livscoach ---------- */
+
+.coach-kort {
+  background: var(--coach-bg);
+  color: var(--coach-tekst);
+  border-radius: 22px;
+  padding: 22px 20px 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+
+.coach-kort.coach-trening { background: var(--trening-bg); }
+
+.coach-tittel {
+  margin: 0 0 10px;
+  font-size: 25px;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--coach-tekst);
+}
+
+.coach-trening .coach-tittel {
+  font-size: 30px;
+  line-height: 1.05;
+  color: var(--trening-tittel);
+}
+
+.coach-tekst {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--coach-tekst);
+  max-width: 60ch;
+}
+
+.coach-flytt {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--coach-dempet);
+}
+
+.coach-knapper {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.coach-knapp {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--coach-tekst);
+  color: var(--coach-bg);
+  cursor: pointer;
+}
+
+.coach-trening .coach-knapp { color: var(--trening-bg); }
+
+.coach-knapp-rolig {
+  background: transparent;
+  color: var(--coach-tekst);
+  box-shadow: inset 0 0 0 1.5px var(--coach-dempet);
+}
+
+.coach-trening .coach-knapp-rolig { color: var(--coach-tekst); }
+
+.coach-knapp:active { transform: scale(0.96); }
+.coach-knapp:disabled { opacity: 0.6; }
+
+.coach-knapp:focus-visible,
+.sjekk-rute:focus-visible,
+.lenke-knapp:focus-visible,
+.handle-vare:focus-visible {
+  outline: 3px solid var(--trening-tittel);
+  outline-offset: 2px;
+}
+
+.vanskelig-kort {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.vanskelig-kort p {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.lenke-knapp {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 8px 0;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.lenke-knapp:disabled { color: var(--muted); }
+
+.sjekk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sjekk-rute {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sjekk-rute svg { width: 24px; height: 24px; flex: none; }
+
+.sjekk-rute[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.sjekk-rute.sjekk-alkohol[aria-pressed="true"] {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.sjekk-rute.sjekk-syk[aria-pressed="true"] {
+  background: var(--annet-soft);
+  border-color: var(--annet);
+  color: var(--annet);
+}
+
+.sjekk-rute:active { transform: scale(0.97); }
+
+.enheter-rad,
+.notat-rad {
+  display: block;
+  margin-top: 14px;
+}
+
+.enheter-rad input { display: block; max-width: 160px; margin-top: 6px; }
+
+.lagret-hint { font-weight: 700; color: var(--accent); }
+
+.rekke {
+  margin: 14px 0 0;
+  font-weight: 800;
+  color: var(--accent-dark);
+}
+
+.helg-tall { margin: 0 0 8px; font-size: 16px; }
+.helg-tall strong { font-size: 28px; color: var(--accent-dark); }
+
+.helg-oppsummering {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  line-height: 1.5;
+}
+
+.feiltekst { color: var(--danger); font-weight: 700; margin: 8px 0 0; }
+
+.tips-liste {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  line-height: 1.55;
+}
+
+.tips-liste li { margin-bottom: 4px; }
+
+.middag-kort { cursor: pointer; }
+
+.middag-navn {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.middag-kort .hint { margin: 0; }
+
+.innstillinger-lenke { text-align: center; margin: 0 0 8px; }
+
+.middag-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.middag-rad {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.middag-rad:first-child { border-top: none; padding-top: 0; }
+
+.middag-idag {
+  margin: 0 -12px;
+  padding: 12px;
+  border-radius: 12px;
+  border-top-color: transparent;
+  background: var(--accent-soft);
+}
+
+.middag-idag + .middag-rad { border-top-color: transparent; }
+
+.middag-rad-topp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.middag-dag { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.middag-rad-navn { display: block; font-size: 17px; margin: 2px 0; }
+
+.middag-rad .hint { margin: 0 0 6px; }
+
+.middag-rad details summary {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.middag-rad details ul { margin: 4px 0 0; padding-left: 20px; line-height: 1.5; }
+
+.under-tittel {
+  font-size: 15px;
+  margin: 16px 0 8px;
+  color: var(--accent-dark);
+}
+
+.handleliste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.handle-vare {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.handle-vare::before {
+  content: "";
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+}
+
+.handle-vare.kjopt { color: var(--muted); text-decoration: line-through; }
+
+.handle-vare.kjopt::before {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--panel);
+}
+
+.merke-rad { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.merke {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--muted-soft);
+  color: var(--muted);
+}
+
+.merke-fastet, .merke-trent { background: var(--accent-soft); color: var(--accent-dark); }
+.merke-alkohol { background: var(--warn-soft); color: var(--warn); }
+.merke-syk { background: var(--annet-soft); color: var(--annet); }
+
+.chat-modal {
+  display: flex;
+  flex-direction: column;
+  height: 85vh;
+}
+
+.chat-logg {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.chat-boble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  line-height: 1.45;
+  font-size: 15px;
+  white-space: pre-wrap;
+}
+
+.chat-meg {
+  align-self: flex-end;
+  background: var(--chat-meg);
+  color: #ffffff;
+  border-bottom-right-radius: 6px;
+}
+
+.chat-coach {
+  align-self: flex-start;
+  background: var(--muted-soft);
+  color: var(--text);
+  border-bottom-left-radius: 6px;
+}
+
+.chat-venter { color: var(--muted); font-style: italic; }
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-form textarea { flex: 1; margin: 0; font-size: 16px; }
+
+.tider-form label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tider-form input[type="time"] { width: auto; font-size: 16px; }
+
+.stats-grid:has(.stat-tile:nth-child(3)) { grid-template-columns: repeat(3, 1fr); }

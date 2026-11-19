@@ -1,167 +1,40 @@
-const TYPE_NAVN = {
-  gange: "Gange",
-  styrke: "Styrke",
-  roing: "Roing",
-  hvile: "Hvile",
-  valgfritt: "Valgfritt",
-};
-
 function $(id) {
   return document.getElementById(id);
 }
 
-let ovelseBibliotek = null;
-
-async function lastOvelseBibliotek() {
-  if (ovelseBibliotek) return ovelseBibliotek;
-  const res = await fetch("/api/ovelser");
-  ovelseBibliotek = await res.json();
-  return ovelseBibliotek;
-}
-
-function renderOvelseChips(container, idListe) {
-  container.innerHTML = idListe
-    .map((id) => {
-      const o = ovelseBibliotek.ovelser[id];
-      if (!o) return "";
-      return `<button type="button" class="ovelse-chip" data-id="${id}">${escapeHtml(o.navn)}</button>`;
-    })
-    .join("");
-  container.querySelectorAll(".ovelse-chip").forEach((btn) => {
-    btn.addEventListener("click", () => apneOvelseModal(btn.dataset.id));
-  });
-}
-
-// Animerer strekfigur-illustrasjonene: hvert element med et data-anim-attributt
-// ("attributt:posisjon_a:posisjon_b ...") beveges frem og tilbake mellom de to
-// posisjonene med requestAnimationFrame - kjøres kun mens øvelsesmodalen er åpen.
-function jevn(t) {
-  return t * t * (3 - 2 * t); // smoothstep, gir en mykere start/stopp enn lineær bevegelse
-}
-
-function startOvelseAnimasjon(svgEl) {
-  const elementer = Array.from(svgEl.querySelectorAll("[data-anim]")).map((el) => ({
-    el,
-    deler: el
-      .getAttribute("data-anim")
-      .split(" ")
-      .map((del) => {
-        const [attributt, a, b] = del.split(":");
-        return { attributt, a: parseFloat(a), b: parseFloat(b) };
-      }),
-  }));
-  if (elementer.length === 0) return null;
-
-  const varighetMs = 1600;
-  let start = null;
-  let rafId = null;
-
-  function tick(ts) {
-    if (start === null) start = ts;
-    const syklus = ((ts - start) % (varighetMs * 2)) / varighetMs; // 0 -> 2
-    const retning = syklus <= 1 ? syklus : 2 - syklus; // 0 -> 1 -> 0
-    const fase = jevn(retning);
-    for (const { el, deler } of elementer) {
-      for (const { attributt, a, b } of deler) {
-        el.setAttribute(attributt, a + (b - a) * fase);
-      }
-    }
-    rafId = requestAnimationFrame(tick);
+async function hentJson(url, valg) {
+  const res = await fetch(url, valg);
+  if (!res.ok) {
+    let melding = "Noe gikk galt. Prøv igjen.";
+    try {
+      melding = (await res.json()).error || melding;
+    } catch (e) {}
+    throw new Error(melding);
   }
-  rafId = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(rafId);
+  return res.json();
 }
 
-function visOvelserForOkt(okt, blokkEl, tittelEl, listeEl) {
-  if (okt && okt.type === "styrke") {
-    blokkEl.classList.remove("hidden");
-    tittelEl.textContent = "Øvelser (trykk for instruksjoner)";
-    renderOvelseChips(listeEl, ovelseBibliotek.styrke_ider);
-  } else if (okt && (okt.type === "roing" || okt.type === "valgfritt")) {
-    blokkEl.classList.remove("hidden");
-    tittelEl.textContent = "Teknikk (trykk for instruksjoner)";
-    renderOvelseChips(listeEl, ovelseBibliotek.roing_ider);
-  } else {
-    blokkEl.classList.add("hidden");
-  }
-}
-
-let apenOvelseId = null;
-let stoppOvelseAnimasjon = null;
-
-async function apneOvelseModal(id) {
-  const o = ovelseBibliotek.ovelser[id];
-  if (!o) return;
-  lukkDagModal(); // lukk dag-detaljer bak seg om øvelsen ble åpnet derfra
-  apenOvelseId = id;
-  $("ovelseModalTittel").textContent = o.navn;
-  $("ovelseModalSvg").innerHTML = `<svg viewBox="0 0 160 160">${o.svg}</svg>`;
-  $("ovelseModalSteg").innerHTML = o.instruks.map((steg) => `<li>${escapeHtml(steg)}</li>`).join("");
-  $("ovelseModalFokus").textContent = o.fokus;
-  $("ovelseModalOverlay").classList.remove("hidden");
-
-  if (stoppOvelseAnimasjon) stoppOvelseAnimasjon();
-  stoppOvelseAnimasjon = startOvelseAnimasjon($("ovelseModalSvg").querySelector("svg"));
-
-  const loggBlokk = $("ovelseModalLoggBlokk");
-  if (ovelseBibliotek.styrke_ider.includes(id)) {
-    loggBlokk.classList.remove("hidden");
-    $("ovelseModalLoggStatus").classList.add("hidden");
-    $("ovelseModalVekt").value = "";
-    $("ovelseModalReps").value = "";
-    $("ovelseModalSistBrukt").textContent = "Henter …";
-
-    const res = await fetch(`/api/styrke-logg/${id}?dato=${idagDato()}`);
-    const data = await res.json();
-    if (apenOvelseId !== id) return; // modalen ble byttet mens vi ventet
-
-    if (data.i_dag) {
-      $("ovelseModalVekt").value = data.i_dag.vekt_kg ?? "";
-      $("ovelseModalReps").value = data.i_dag.reps ?? "";
-    }
-    if (data.forrige) {
-      const delerTekst = [
-        data.forrige.vekt_kg != null ? `${data.forrige.vekt_kg} kg` : null,
-        data.forrige.reps != null ? `${data.forrige.reps} reps` : null,
-      ]
-        .filter(Boolean)
-        .join(" × ");
-      $("ovelseModalSistBrukt").textContent = delerTekst
-        ? `Sist brukt: ${delerTekst} (${formaterDato(data.forrige.dato)})`
-        : "Ikke registrert tidligere.";
-    } else {
-      $("ovelseModalSistBrukt").textContent = "Ikke registrert tidligere.";
-    }
-  } else {
-    loggBlokk.classList.add("hidden");
-  }
-}
-
-function lukkOvelseModal() {
-  $("ovelseModalOverlay").classList.add("hidden");
-  apenOvelseId = null;
-  if (stoppOvelseAnimasjon) {
-    stoppOvelseAnimasjon();
-    stoppOvelseAnimasjon = null;
-  }
-}
-
-async function lagreOvelseLogg() {
-  if (!apenOvelseId) return;
-  const body = {
-    dato: idagDato(),
-    ovelse_id: apenOvelseId,
-    vekt_kg: $("ovelseModalVekt").value,
-    reps: $("ovelseModalReps").value,
-  };
-  await fetch("/api/styrke-logg", {
+function postJson(url, data) {
+  return hentJson(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(data || {}),
   });
-  const status = $("ovelseModalLoggStatus");
-  status.classList.remove("hidden");
-  setTimeout(() => status.classList.add("hidden"), 2000);
+}
+
+const UKEDAG = ["søndag", "mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag"];
+const MANED = ["januar", "februar", "mars", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "desember"];
+
+function langDato(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  const uke = UKEDAG[d.getDay()];
+  return `${uke[0].toUpperCase()}${uke.slice(1)} ${d.getDate()}. ${MANED[d.getMonth()]}`;
+}
+
+function kortUkedag(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  const uke = UKEDAG[d.getDay()];
+  return `${uke[0].toUpperCase()}${uke.slice(1)}`;
 }
 
 function idagDato() {
@@ -171,231 +44,387 @@ function idagDato() {
   return `${d.getFullYear()}-${mnd}-${dag}`;
 }
 
+function lagreLokalt(nokkel, verdi) {
+  try {
+    localStorage.setItem(nokkel, JSON.stringify(verdi));
+  } catch (e) {}
+}
+
+function hentLokalt(nokkel, standard) {
+  try {
+    const v = localStorage.getItem(nokkel);
+    return v ? JSON.parse(v) : standard;
+  } catch (e) {
+    return standard;
+  }
+}
+
 // ---- Faner ----
+
+function visFane(navn) {
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === navn));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${navn}`));
+  if (navn === "mat") lastMat();
+  if (navn === "oversikt") lastOversikt();
+  if (navn === "historikk") lastHistorikk();
+  window.scrollTo(0, 0);
+}
 
 function settOppFaner() {
   document.querySelectorAll(".tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      $(`tab-${btn.dataset.tab}`).classList.add("active");
-      if (btn.dataset.tab === "fysio") lastFysio();
-      if (btn.dataset.tab === "oversikt") lastOversikt();
-      if (btn.dataset.tab === "historikk") lastHistorikk();
-    });
+    btn.addEventListener("click", () => visFane(btn.dataset.tab));
   });
 }
 
 // ---- I dag ----
 
-async function lastDag() {
-  const [res] = await Promise.all([fetch(`/api/dag?dato=${idagDato()}`), lastOvelseBibliotek()]);
-  const data = await res.json();
+let dagData = null;
+let sjekk = { fastet: false, alkohol: false, alkohol_enheter: "", trent: false, syk: false, notat: "" };
 
-  $("faseTagline").textContent = `Uke ${data.uke_nummer} · Fase ${data.fase.fase}: ${data.fase.navn}`;
-  $("dagensSitat").textContent = `"${data.sitat}"`;
-
-  const okt = data.okt;
-  $("oktDagNavn").textContent = `${data.ukedag_navn}: ${okt ? okt.tittel : "Ingen økt planlagt"}`;
-  $("oktType").textContent = okt ? (TYPE_NAVN[okt.type] || okt.type) : "";
-  $("oktBeskrivelse").textContent = okt ? okt.beskrivelse : "";
-
-  visOvelserForOkt(okt, $("oktOvelserBlokk"), $("oktOvelserTittel"), $("oktOvelserListe"));
-
-  const fysioBlokk = $("fysioIdagBlokk");
-  const fysioRow = $("fysioGjortRow");
-  if (data.fysio_ovelser.length > 0) {
-    fysioBlokk.classList.remove("hidden");
-    fysioRow.classList.remove("hidden");
-    $("fysioIdagListe").innerHTML = data.fysio_ovelser
-      .map((o) => `<li><strong>${escapeHtml(o.navn)}</strong>${o.beskrivelse ? " – " + escapeHtml(o.beskrivelse) : ""}</li>`)
-      .join("");
-  } else {
-    fysioBlokk.classList.add("hidden");
-    fysioRow.classList.add("hidden");
-  }
-
-  const logg = data.logg;
-  let status = "";
-  if (logg) {
-    if (logg.annen_treningsform) status = "annet";
-    else if (logg.gjennomfort) status = "gjennomfort";
-    else status = "ikke_gjennomfort";
-  }
-  settGjennomfortValg(status);
-  $("treningsformBegrunnelse").value = (logg && logg.treningsform_begrunnelse) || "";
-  $("ikkeGjennomfortBegrunnelse").value = (logg && logg.ikke_gjennomfort_begrunnelse) || "";
-  $("fysioGjort").checked = !!(logg && logg.fysio_gjort);
-  $("dagsloggNotater").value = (logg && logg.notater) || "";
-}
-
-function settGjennomfortValg(verdi) {
-  $("gjennomfort").value = verdi;
-  document.querySelectorAll("#gjennomfortToggle .segment").forEach((btn) => {
-    btn.classList.toggle("aktiv", btn.dataset.val === verdi);
-  });
-  $("annenTreningsformBlokk").classList.toggle("hidden", verdi !== "annet");
-  $("ikkeGjennomfortBlokk").classList.toggle("hidden", verdi !== "ikke_gjennomfort");
-}
-
-async function lagreDagslogg(e) {
-  e.preventDefault();
-  const valg = $("gjennomfort").value;
-  const body = {
-    dato: idagDato(),
-    gjennomfort: valg === "gjennomfort" || valg === "annet",
-    annen_treningsform: valg === "annet",
-    treningsform_begrunnelse: $("treningsformBegrunnelse").value,
-    ikke_gjennomfort_begrunnelse: $("ikkeGjennomfortBegrunnelse").value,
-    fysio_gjort: $("fysioGjort").checked,
-    notater: $("dagsloggNotater").value,
-  };
-  await fetch("/api/dagslogg", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const status = $("dagsloggStatus");
-  status.textContent = "Lagret!";
-  status.classList.remove("hidden");
-  setTimeout(() => status.classList.add("hidden"), 2000);
-  lastUke();
-}
-
-// ---- Uken ----
-
-let ukeDagerCache = [];
-
-async function lastUke() {
-  const res = await fetch(`/api/uke?dato=${idagDato()}`);
-  const data = await res.json();
-  ukeDagerCache = data.dager;
-  const grid = $("ukeGridMini");
-  grid.innerHTML = data.dager
-    .map((d) => {
-      const okt = d.okt;
-      const tittel = okt ? okt.tittel : "–";
-      const type = okt ? TYPE_NAVN[okt.type] || okt.type : "";
-      let statusKlasse = "status-uferdig";
-      let statusTekst = "Ikke gjennomført";
-      if (okt && okt.type === "hvile") {
-        statusKlasse = "status-hvile";
-        statusTekst = "Hviledag";
-      }
-      if (d.gjennomfort) {
-        statusKlasse = "status-ferdig";
-        statusTekst = "Gjennomført";
-      }
-      return `
-        <div class="uke-dag uke-dag-trykkbar ${d.er_i_dag ? "i-dag" : ""}" data-dato="${d.dato}">
-          <div class="uke-dag-navn">${d.ukedag_navn}</div>
-          <div class="uke-dag-okt">${tittel}${type && type !== tittel ? " · " + type : ""}</div>
-          <div class="uke-dag-status ${statusKlasse}">${statusTekst}</div>
-        </div>`;
-    })
-    .join("");
-
-  grid.querySelectorAll(".uke-dag-trykkbar").forEach((el) => {
-    el.addEventListener("click", () => apneDagModal(el.dataset.dato));
-  });
-}
-
-function apneDagModal(dato) {
-  const d = ukeDagerCache.find((x) => x.dato === dato);
-  if (!d) return;
-  const okt = d.okt;
-
-  $("dagModalTittel").textContent = `${d.ukedag_navn} · ${formaterDato(dato)}`;
-  $("dagModalType").textContent = okt ? TYPE_NAVN[okt.type] || okt.type : "";
-  $("dagModalBeskrivelse").textContent = okt ? okt.beskrivelse : "Ingen økt planlagt.";
-  visOvelserForOkt(okt, $("dagModalOvelserBlokk"), $("dagModalOvelserTittel"), $("dagModalOvelserListe"));
-  $("dagModalOverlay").classList.remove("hidden");
-}
-
-function lukkDagModal() {
-  $("dagModalOverlay").classList.add("hidden");
-}
-
-// ---- Fysio-øvelser ----
-
-let fysioCache = [];
-
-async function lastFysio() {
-  const res = await fetch("/api/fysio");
-  fysioCache = await res.json();
-  const liste = $("fysioListe");
-  if (fysioCache.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen øvelser lagt til ennå. Legg til når du har vært hos fysioterapeuten.</li>`;
+async function lastIdag() {
+  $("toppDato").textContent = langDato(idagDato());
+  try {
+    dagData = await hentJson("/api/i-dag");
+  } catch (e) {
+    $("coachTittel").textContent = "Fikk ikke kontakt med appen";
+    $("coachTekst").textContent = "Sjekk nettet og dra ned for å prøve igjen.";
     return;
   }
-  liste.innerHTML = fysioCache
+  visCoach(dagData);
+  visSjekk(dagData.dagssjekk);
+  visHelg(dagData);
+  visMiddag(dagData.middag);
+  visRekke(dagData.alkoholfri_rekke);
+}
+
+function visCoach(d) {
+  const kort = $("coachKort");
+  kort.classList.toggle("coach-trening", d.treningsdag);
+  $("coachTittel").textContent = d.melding.tittel;
+  $("coachTekst").textContent = d.melding.tekst;
+  const flytt = $("coachFlytt");
+  flytt.textContent = d.flytt_grunn || "";
+  flytt.classList.toggle("hidden", !d.flytt_grunn || d.melding.tekst.includes(d.flytt_grunn));
+}
+
+function visSjekk(s) {
+  sjekk = {
+    fastet: !!(s && s.fastet),
+    alkohol: !!(s && s.alkohol),
+    alkohol_enheter: s && s.alkohol_enheter != null ? String(s.alkohol_enheter).replace(".", ",") : "",
+    trent: !!(s && s.trent),
+    syk: !!(s && s.syk),
+    notat: (s && s.notat) || "",
+  };
+  document.querySelectorAll("#sjekkGrid .sjekk-rute").forEach((btn) => {
+    btn.setAttribute("aria-pressed", sjekk[btn.dataset.felt] ? "true" : "false");
+  });
+  $("enheterRad").classList.toggle("hidden", !sjekk.alkohol);
+  $("alkoholEnheter").value = sjekk.alkohol_enheter;
+  $("sjekkNotat").value = sjekk.notat;
+}
+
+let lagretTimer = null;
+
+async function lagreSjekk() {
+  try {
+    const rad = await postJson("/api/dagssjekk", { ...sjekk, dato: dagData ? dagData.dato : idagDato() });
+    const hint = $("sjekkLagret");
+    hint.textContent = "Lagret";
+    hint.classList.remove("hidden");
+    clearTimeout(lagretTimer);
+    lagretTimer = setTimeout(() => hint.classList.add("hidden"), 1500);
+    if (dagData) {
+      dagData.dagssjekk = rad;
+      const r = await hentJson("/api/i-dag").catch(() => null);
+      if (r) visRekke(r.alkoholfri_rekke);
+    }
+  } catch (e) {
+    const hint = $("sjekkLagret");
+    hint.textContent = "Ble ikke lagret – prøv igjen";
+    hint.classList.remove("hidden");
+  }
+}
+
+function veksleSjekk(felt) {
+  sjekk[felt] = !sjekk[felt];
+  if (felt === "alkohol" && !sjekk.alkohol) sjekk.alkohol_enheter = "";
+  visSjekk(sjekk);
+  if (felt === "alkohol" && sjekk.alkohol) $("alkoholEnheter").focus();
+  lagreSjekk();
+}
+
+function visRekke(antall) {
+  const el = $("alkoholfriRekke");
+  if (antall >= 1) {
+    el.textContent = `${antall} alkoholfri${antall === 1 ? "" : "e"} hverdag${antall === 1 ? "" : "er"} på rad`;
+    el.classList.remove("hidden");
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function visMiddag(m) {
+  if (!m) {
+    $("middagNavn").textContent = "Ingen plan i dag";
+    $("middagInfo").textContent = "Helg – spis noe godt og enkelt med familien.";
+    return;
+  }
+  $("middagNavn").textContent = m.navn;
+  $("middagInfo").textContent = `${m.minutter} min · ${m.beskrivelse}`;
+}
+
+function visHelg(d) {
+  const kort = $("helgKort");
+  const viaLenke = location.hash === "#helg";
+  const helg = d.helg;
+  const harOppsummering = helg && helg.oppsummering;
+  kort.classList.toggle("hidden", !(d.er_fredag_til_sondag || viaLenke || harOppsummering));
+  const harPlan = helg && helg.planlagte_enheter != null;
+  $("helgSkjema").classList.toggle("hidden", harPlan);
+  $("helgVisning").classList.toggle("hidden", !harPlan);
+  if (harPlan) {
+    $("helgTall").textContent = helg.planlagte_enheter;
+    $("helgTips").innerHTML = helg.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  }
+  const opps = $("helgOppsummering");
+  opps.textContent = harOppsummering ? helg.oppsummering : "";
+  opps.classList.toggle("hidden", !harOppsummering);
+}
+
+async function lagreHelg() {
+  const feil = $("helgFeil");
+  feil.classList.add("hidden");
+  const btn = $("helgLagreBtn");
+  btn.disabled = true;
+  btn.textContent = "Lagrer …";
+  try {
+    const r = await postJson("/api/helg", { planlagte_enheter: $("helgEnheter").value.trim() });
+    dagData.helg = { ...(dagData.helg || {}), planlagte_enheter: r.planlagte_enheter, tips: r.tips };
+    visHelg(dagData);
+  } catch (e) {
+    feil.textContent = e.message;
+    feil.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Lagre plan";
+  }
+}
+
+async function visVanskelig() {
+  const btn = $("vanskeligBtn");
+  btn.disabled = true;
+  try {
+    const r = await postJson("/api/coach/vanskelig");
+    $("vanskeligTekst").textContent = r.tekst;
+    $("vanskeligKort").classList.remove("hidden");
+    $("vanskeligKort").scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (e) {
+    $("vanskeligTekst").textContent = "Gå en tur rundt kvartalet i ti minutter, og drikk et stort glass vann.";
+    $("vanskeligKort").classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Chat ----
+
+function chatBoble(rolle, tekst) {
+  const div = document.createElement("div");
+  div.className = `chat-boble chat-${rolle === "user" ? "meg" : "coach"}`;
+  div.textContent = tekst;
+  $("chatLogg").appendChild(div);
+  $("chatLogg").scrollTop = $("chatLogg").scrollHeight;
+  return div;
+}
+
+async function apneChat() {
+  $("chatOverlay").classList.remove("hidden");
+  $("chatLogg").innerHTML = "";
+  const historikk = await hentJson("/api/coach/chat").catch(() => []);
+  if (historikk.length === 0) chatBoble("assistant", "Hei! Spør meg om mat, trening, alkohol eller hva som helst du lurer på.");
+  historikk.forEach((r) => chatBoble(r.rolle, r.tekst));
+  setTimeout(() => $("chatTekst").focus(), 50);
+}
+
+function lukkChat() {
+  $("chatOverlay").classList.add("hidden");
+}
+
+async function sendChat(e) {
+  e.preventDefault();
+  const tekst = $("chatTekst").value.trim();
+  if (!tekst) return;
+  $("chatTekst").value = "";
+  chatBoble("user", tekst);
+  const venter = chatBoble("assistant", "Tenker …");
+  venter.classList.add("chat-venter");
+  $("chatSendBtn").disabled = true;
+  try {
+    const r = await postJson("/api/coach/chat", { tekst });
+    venter.textContent = r.svar;
+  } catch (e) {
+    venter.textContent = e.message;
+  } finally {
+    venter.classList.remove("chat-venter");
+    $("chatSendBtn").disabled = false;
+  }
+}
+
+// ---- Mat ----
+
+let matData = null;
+
+async function lastMat() {
+  try {
+    matData = await hentJson("/api/mat");
+  } catch (e) {
+    $("middagListe").innerHTML = `<li class="tom">Fikk ikke hentet menyen. Prøv igjen om litt.</li>`;
+    return;
+  }
+  visMat();
+}
+
+function visMat() {
+  const iDag = idagDato();
+  $("middagListe").innerHTML = matData.middager
     .map(
-      (o) => `
-      <li class="fysio-rad ${o.aktiv ? "" : "inaktiv"}" data-id="${o.id}">
-        <div>
-          <strong>${escapeHtml(o.navn)}</strong>
-          ${o.beskrivelse ? `<div class="fysio-beskrivelse">${escapeHtml(o.beskrivelse)}</div>` : ""}
+      (m) => `
+      <li class="middag-rad${m.dag === iDag ? " middag-idag" : ""}">
+        <div class="middag-rad-topp">
+          <span class="middag-dag">${kortUkedag(m.dag)}${m.dag === iDag ? " – i dag" : ""}</span>
+          <button type="button" class="lenke-knapp" data-bytt="${m.dag}">Bytt</button>
         </div>
-        <span class="badge">${o.aktiv ? "Aktiv" : "Av"}</span>
+        <strong class="middag-rad-navn">${escapeHtml(m.navn)}</strong>
+        <p class="hint">${m.minutter} min · ${escapeHtml(m.beskrivelse)}</p>
+        <details><summary>Ingredienser</summary><ul>${m.ingredienser.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>
       </li>`
     )
     .join("");
-
-  liste.querySelectorAll(".fysio-rad").forEach((el) => {
-    el.addEventListener("click", () => apneFysioModal(Number(el.dataset.id)));
-  });
+  const l = matData.lunsj;
+  $("lunsjNavn").textContent = l.navn;
+  $("lunsjInfo").textContent = `Lag søndag · ${l.minutter} min`;
+  $("lunsjBeskrivelse").textContent = l.beskrivelse;
+  $("brodtips").innerHTML = (l.brodtips || []).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  visHandleliste();
 }
 
-function apneFysioModal(id) {
-  const o = id ? fysioCache.find((x) => x.id === id) : null;
-  $("fysioModalTitle").textContent = o ? "Rediger øvelse" : "Ny øvelse";
-  $("fysioId").value = o ? o.id : "";
-  $("fysioNavn").value = o ? o.navn : "";
-  $("fysioBeskrivelse").value = o ? o.beskrivelse : "";
-  $("fysioAktiv").checked = o ? !!o.aktiv : true;
-  $("fysioDeleteBtn").classList.toggle("hidden", !o);
-  $("modalOverlay").classList.remove("hidden");
+function handlelisteNokkel() {
+  return `handleliste-${matData.uke_start}`;
 }
 
-function lukkFysioModal() {
-  $("modalOverlay").classList.add("hidden");
+function visHandleliste() {
+  const kryss = hentLokalt(handlelisteNokkel(), []);
+  $("handleliste").innerHTML = matData.handleliste
+    .map((v) => {
+      const valgt = kryss.includes(v);
+      return `<li><button type="button" class="handle-vare${valgt ? " kjopt" : ""}" aria-pressed="${valgt}" data-vare="${escapeHtml(v)}">${escapeHtml(v)}</button></li>`;
+    })
+    .join("");
 }
 
-async function lagreFysio(e) {
-  e.preventDefault();
-  const id = $("fysioId").value;
-  const body = {
-    navn: $("fysioNavn").value,
-    beskrivelse: $("fysioBeskrivelse").value,
-    aktiv: $("fysioAktiv").checked,
-  };
-  if (id) {
-    await fetch(`/api/fysio/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } else {
-    await fetch("/api/fysio", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+async function byttMiddag(dag, btn) {
+  btn.disabled = true;
+  btn.textContent = "Finner ny …";
+  try {
+    matData = await postJson("/api/mat/bytt", { dag });
+    visMat();
+  } catch (e) {
+    btn.textContent = "Prøv igjen";
+    btn.disabled = false;
   }
-  lukkFysioModal();
-  lastFysio();
-  lastDag();
 }
 
-async function slettFysio() {
-  const id = $("fysioId").value;
-  if (!id) return;
-  if (!confirm("Slette denne øvelsen?")) return;
-  await fetch(`/api/fysio/${id}`, { method: "DELETE" });
-  lukkFysioModal();
-  lastFysio();
-  lastDag();
+// ---- Varsler ----
+
+function base64TilBytes(b64) {
+  const padding = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+function stotterPush() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+async function oppdaterVarselKort() {
+  const kort = $("varselKort");
+  if (!stotterPush()) {
+    $("varselHint").textContent = "Åpne appen fra ikonet på hjemskjermen for å få varsler.";
+    $("slaPaVarslerBtn").classList.add("hidden");
+    kort.classList.remove("hidden");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    const sub = reg && (await reg.pushManager.getSubscription());
+    kort.classList.toggle("hidden", !!sub);
+    return;
+  }
+  if (Notification.permission === "denied") {
+    $("varselHint").textContent = "Varsler er skrudd av. Slå dem på under Innstillinger → Varslinger → Superhuman på iPhonen.";
+    $("slaPaVarslerBtn").classList.add("hidden");
+  }
+  kort.classList.remove("hidden");
+}
+
+async function slaPaVarsler() {
+  const btn = $("slaPaVarslerBtn");
+  btn.disabled = true;
+  try {
+    const tillatelse = await Notification.requestPermission();
+    if (tillatelse !== "granted") throw new Error("Du må trykke «Tillat» for å få varsler.");
+    const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    await navigator.serviceWorker.ready;
+    const { offentlig } = await hentJson("/api/push/nokkel");
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64TilBytes(offentlig) });
+    await postJson("/api/push/abonner", sub.toJSON());
+    await postJson("/api/push/test");
+    $("varselKort").classList.add("hidden");
+  } catch (e) {
+    $("varselHint").textContent = e.message || "Klarte ikke å slå på varsler. Prøv igjen.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function apneTider() {
+  const tider = await hentJson("/api/innstillinger/varsler").catch(() => null);
+  if (!tider) return;
+  const form = $("tiderForm");
+  Object.entries(tider).forEach(([k, v]) => {
+    if (form.elements[k]) form.elements[k].value = v;
+  });
+  $("tiderFeil").classList.add("hidden");
+  $("tiderOverlay").classList.remove("hidden");
+}
+
+async function lagreTider(e) {
+  e.preventDefault();
+  const form = $("tiderForm");
+  const data = Object.fromEntries(["morgen", "middag", "helg", "kveld", "sondag"].map((k) => [k, form.elements[k].value]));
+  try {
+    await postJson("/api/innstillinger/varsler", data);
+    $("tiderOverlay").classList.add("hidden");
+  } catch (err) {
+    $("tiderFeil").textContent = err.message;
+    $("tiderFeil").classList.remove("hidden");
+  }
+}
+
+async function sendTestvarsel() {
+  const btn = $("testVarselBtn");
+  btn.disabled = true;
+  try {
+    const r = await postJson("/api/push/test");
+    btn.textContent = r.sendt ? "Sendt!" : "Ingen telefon koblet til";
+  } catch (e) {
+    btn.textContent = "Feilet";
+  }
+  setTimeout(() => {
+    btn.textContent = "Send testvarsel";
+    btn.disabled = false;
+  }, 2500);
 }
 
 function formaterDato(isoDato) {
@@ -429,15 +458,15 @@ const OVERSIKT_META = {
 async function lastOversikt() {
   const res = await fetch(`/api/oversikt?dager=${oversiktDagerValgt}`);
   const data = await res.json();
-  renderTreningUke(data.trening_uke, data.streak_uker);
+  renderTreningUke(data.trening_uke, data.alkoholfri_rekke);
   renderOversiktKort(data.kort, data.tilkoblinger);
   renderInnsikt(data.innsikt);
 }
 
-function renderTreningUke(uke, streakUker) {
+function renderTreningUke(uke, alkoholfriRekke) {
   const antall = uke.filter((d) => d.gjennomfort === true).length;
-  $("treningUkeAntall").textContent = `${antall} av ${uke.length} gjennomført`;
-  const iDag = new Date().toISOString().slice(0, 10);
+  $("treningUkeAntall").textContent = `${antall} av ${uke.length} dager trent`;
+  const iDag = idagDato();
   $("treningUkeStrip").innerHTML = uke
     .map((d) => {
       let status = "ikke-logget";
@@ -448,12 +477,12 @@ function renderTreningUke(uke, streakUker) {
     })
     .join("");
 
-  const streakEl = $("streakTekst");
-  if (streakUker >= 1) {
-    streakEl.textContent = `${streakUker} ${streakUker === 1 ? "uke" : "uker"} på rad med full gjennomføring`;
-    streakEl.classList.remove("hidden");
+  const rekkeEl = $("streakTekst");
+  if (alkoholfriRekke >= 1) {
+    rekkeEl.textContent = `${alkoholfriRekke} alkoholfri${alkoholfriRekke === 1 ? "" : "e"} hverdag${alkoholfriRekke === 1 ? "" : "er"} på rad`;
+    rekkeEl.classList.remove("hidden");
   } else {
-    streakEl.classList.add("hidden");
+    rekkeEl.classList.add("hidden");
   }
 }
 
@@ -465,8 +494,8 @@ function renderInnsikt(innsikt) {
   }
   const fmt = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1).replace(".", ",")} kg`;
   $("innsiktTekst").textContent =
-    `Ukene med minst 80% gjennomføring (${innsikt.uker_hoy} uker) endret vekten seg i snitt ${fmt(innsikt.snitt_delta_hoy)}, ` +
-    `mot ${fmt(innsikt.snitt_delta_lav)} i ukene med lavere gjennomføring (${innsikt.uker_lav} uker).`;
+    `I uker med minst 5 alkoholfrie dager (${innsikt.uker_hoy} uker) endret vekten seg i snitt ${fmt(innsikt.snitt_delta_hoy)}, ` +
+    `mot ${fmt(innsikt.snitt_delta_lav)} i ukene med færre (${innsikt.uker_lav} uker).`;
   kort.classList.remove("hidden");
 }
 
@@ -928,43 +957,45 @@ async function synkroniserAlt() {
 
 // ---- Historikk ----
 
-async function lastHistorikk() {
-  const res = await fetch("/api/historikk");
-  const data = await res.json();
+const MERKER = [
+  ["fastet", "Fastet"],
+  ["alkohol", "Alkohol"],
+  ["trent", "Trent"],
+  ["syk", "Syk"],
+];
 
-  const statsWrap = $("historikkStats");
-  const stats = data.stats;
-  statsWrap.innerHTML = `
-    <div class="stat-tile"><strong>${stats.gjennomfort_prosent}%</strong><span>gjennomført</span></div>
-    <div class="stat-tile"><strong>${stats.gjennomfort_antall}</strong><span>av ${stats.totalt_registrert} registrerte dager</span></div>
+async function lastHistorikk() {
+  const data = await hentJson("/api/historikk").catch(() => null);
+  if (!data) return;
+  const s = data.stats;
+  $("historikkStats").innerHTML = `
+    <div class="stat-tile"><strong>${s.alkoholfrie_hverdager_prosent}%</strong><span>alkoholfrie hverdager</span></div>
+    <div class="stat-tile"><strong>${s.treningsdager}</strong><span>treningsdager</span></div>
+    <div class="stat-tile"><strong>${s.fastedager}</strong><span>fastedager</span></div>
   `;
+  const statsHint = document.querySelector("#tab-historikk .card h2");
+  if (statsHint) statsHint.textContent = "Siste 30 dager";
 
   const liste = $("historikkListe");
   if (data.dager.length === 0) {
-    liste.innerHTML = `<li class="tom">Ingen dager registrert ennå. Kryss av i "I dag" for å begynne å bygge historikk.</li>`;
+    liste.innerHTML = `<li class="tom">Ingen dager registrert ennå. Kryss av under «I dag» for å komme i gang.</li>`;
     return;
   }
   liste.innerHTML = data.dager
     .map((d) => {
-      let statusKlasse = "status-uferdig";
-      let statusTekst = "Ikke gjennomført";
-      if (d.annen_treningsform) {
-        statusKlasse = "status-annet";
-        statusTekst = "Annen økt";
-      } else if (d.gjennomfort) {
-        statusKlasse = "status-ferdig";
-        statusTekst = "Gjennomført";
-      }
-      const begrunnelse = d.annen_treningsform ? d.treningsform_begrunnelse : d.ikke_gjennomfort_begrunnelse;
+      const merker = MERKER.filter(([k]) => d[k])
+        .map(([k, navn]) => {
+          const tekst = k === "alkohol" && d.alkohol_enheter ? `${navn} (${String(d.alkohol_enheter).replace(".", ",")})` : navn;
+          return `<span class="merke merke-${k}">${tekst}</span>`;
+        })
+        .join("");
       return `
         <li class="historikk-rad">
           <div class="historikk-rad-header">
             <span class="historikk-dato">${formaterDato(d.dato)} · ${d.ukedag_navn}</span>
-            <span class="uke-dag-status ${statusKlasse}">${statusTekst}</span>
           </div>
-          <div class="historikk-okt">${d.okt_tittel ? escapeHtml(d.okt_tittel) : ""}</div>
-          ${begrunnelse ? `<div class="historikk-notater">${escapeHtml(begrunnelse)}</div>` : ""}
-          ${d.notater ? `<div class="historikk-notater">${escapeHtml(d.notater)}</div>` : ""}
+          <div class="merke-rad">${merker || '<span class="merke merke-ingen">Ingen avkrysning</span>'}</div>
+          ${d.notat ? `<div class="historikk-notater">${escapeHtml(d.notat)}</div>` : ""}
         </li>`;
     })
     .join("");
@@ -972,19 +1003,74 @@ async function lastHistorikk() {
 
 function escapeHtml(tekst) {
   const div = document.createElement("div");
-  div.textContent = tekst || "";
+  div.textContent = tekst == null ? "" : String(tekst);
   return div.innerHTML;
 }
 
 // ---- Oppstart ----
 
+function lukkVedKlikkUtenfor(id, lukk) {
+  $(id).addEventListener("click", (e) => {
+    if (e.target.id === id) lukk();
+  });
+}
+
 function main() {
   settOppFaner();
 
-  $("dagsloggForm").addEventListener("submit", lagreDagslogg);
-  document.querySelectorAll("#gjennomfortToggle .segment").forEach((btn) => {
-    btn.addEventListener("click", () => settGjennomfortValg(btn.dataset.val));
+  document.querySelectorAll("#sjekkGrid .sjekk-rute").forEach((btn) => {
+    btn.addEventListener("click", () => veksleSjekk(btn.dataset.felt));
   });
+  $("alkoholEnheter").addEventListener("change", () => {
+    sjekk.alkohol_enheter = $("alkoholEnheter").value.trim();
+    lagreSjekk();
+  });
+  $("sjekkNotat").addEventListener("blur", () => {
+    if ($("sjekkNotat").value.trim() === sjekk.notat) return;
+    sjekk.notat = $("sjekkNotat").value.trim();
+    lagreSjekk();
+  });
+
+  $("helgLagreBtn").addEventListener("click", lagreHelg);
+  $("helgEndreBtn").addEventListener("click", () => {
+    $("helgEnheter").value = dagData.helg.planlagte_enheter;
+    $("helgSkjema").classList.remove("hidden");
+    $("helgVisning").classList.add("hidden");
+  });
+  $("vanskeligBtn").addEventListener("click", visVanskelig);
+  $("vanskeligLukk").addEventListener("click", () => $("vanskeligKort").classList.add("hidden"));
+  $("middagKort").addEventListener("click", () => visFane("mat"));
+
+  $("sporCoachBtn").addEventListener("click", apneChat);
+  $("chatLukkBtn").addEventListener("click", lukkChat);
+  $("chatForm").addEventListener("submit", sendChat);
+  lukkVedKlikkUtenfor("chatOverlay", lukkChat);
+
+  $("slaPaVarslerBtn").addEventListener("click", slaPaVarsler);
+  $("varseltiderBtn").addEventListener("click", apneTider);
+  $("tiderForm").addEventListener("submit", lagreTider);
+  $("tiderAvbryt").addEventListener("click", () => $("tiderOverlay").classList.add("hidden"));
+  $("testVarselBtn").addEventListener("click", sendTestvarsel);
+  lukkVedKlikkUtenfor("tiderOverlay", () => $("tiderOverlay").classList.add("hidden"));
+
+  $("middagListe").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bytt]");
+    if (btn) byttMiddag(btn.dataset.bytt, btn);
+  });
+  $("handleliste").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-vare]");
+    if (!btn) return;
+    const kryss = new Set(hentLokalt(handlelisteNokkel(), []));
+    const vare = btn.dataset.vare;
+    kryss.has(vare) ? kryss.delete(vare) : kryss.add(vare);
+    lagreLokalt(handlelisteNokkel(), [...kryss]);
+    visHandleliste();
+  });
+  $("nullstillHandleliste").addEventListener("click", () => {
+    lagreLokalt(handlelisteNokkel(), []);
+    visHandleliste();
+  });
+
   $("oversiktSynkBtn").addEventListener("click", synkroniserAlt);
   document.querySelectorAll("#rangeToggle .segment").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -994,29 +1080,20 @@ function main() {
       lastOversikt();
     });
   });
-  $("nyFysioBtn").addEventListener("click", () => apneFysioModal(null));
-  $("fysioForm").addEventListener("submit", lagreFysio);
-  $("fysioCancelBtn").addEventListener("click", lukkFysioModal);
-  $("fysioDeleteBtn").addEventListener("click", slettFysio);
-  $("modalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "modalOverlay") lukkFysioModal();
-  });
-  $("ovelseLukkBtn").addEventListener("click", lukkOvelseModal);
-  $("ovelseModalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "ovelseModalOverlay") lukkOvelseModal();
-  });
-  $("dagModalLukkBtn").addEventListener("click", lukkDagModal);
-  $("dagModalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "dagModalOverlay") lukkDagModal();
-  });
-  $("ovelseModalLoggLagreBtn").addEventListener("click", lagreOvelseLogg);
   $("vektDetaljLukkBtn").addEventListener("click", lukkVektDetaljModal);
-  $("vektDetaljModalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "vektDetaljModalOverlay") lukkVektDetaljModal();
-  });
+  lukkVedKlikkUtenfor("vektDetaljModalOverlay", lukkVektDetaljModal);
 
-  lastDag();
-  lastUke();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+
+  lastIdag();
+  oppdaterVarselKort();
+  if (location.hash === "#mat") visFane("mat");
+  if (location.hash === "#helg") setTimeout(() => $("helgKort").scrollIntoView({ block: "center" }), 400);
+
+  // Hent ny dag når appen åpnes igjen fra bakgrunnen (f.eks. neste morgen).
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") lastIdag();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", main);
