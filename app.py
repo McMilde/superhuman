@@ -15,6 +15,7 @@ import requests
 
 import coach
 import livsstil
+import varsler
 from flask import (
     Flask, Response, after_this_request, g, jsonify, redirect, request,
     send_file, session, url_for,
@@ -78,7 +79,7 @@ def krev_innlogging():
     if not APP_PASSORD:
         return
     if request.endpoint in (
-        "login", "static",
+        "login", "static", "service_worker",
         "withings_callback", "api_withings_synk_automatisk",
         "oura_callback", "api_oura_synk_automatisk",
     ):
@@ -1175,6 +1176,37 @@ def api_helg():
     )
     db.commit()
     return jsonify({"planlagte_enheter": enheter, "tips": tips})
+
+
+# ---- Push-varsler ----
+
+@app.route("/sw.js")
+def service_worker():
+    svar = app.send_static_file("sw.js")
+    svar.headers["Content-Type"] = "application/javascript"
+    svar.headers["Service-Worker-Allowed"] = "/"
+    svar.headers["Cache-Control"] = "no-cache"
+    return svar
+
+
+@app.route("/api/push/nokkel")
+def api_push_nokkel():
+    return jsonify({"offentlig": varsler.hent_eller_lag_vapid(get_db())[1]})
+
+
+@app.route("/api/push/abonner", methods=["POST"])
+def api_push_abonner():
+    try:
+        varsler.lagre_abonnement(get_db(), request.get_json(force=True))
+    except ValueError:
+        return jsonify({"error": "Ugyldig abonnement"}), 400
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/api/push/test", methods=["POST"])
+def api_push_test():
+    sendt = varsler.send_til_alle(get_db(), "Varsler virker! 🎉", "Nå kan coachen minne deg på ting.")
+    return jsonify({"sendt": sendt})
 
 
 # ---- Målvekt ----
