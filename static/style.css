@@ -1607,3 +1607,51 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
   border-bottom: 1px solid var(--border);
   min-height: 44px;
 }
+
+
+/* ---------- Bla mellom dager ---------- */
+
+.dato-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--muted-soft);
+}
+
+.dato-pil {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: none;
+  background: var(--panel);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.dato-pil svg { width: 20px; height: 20px; }
+.dato-pil:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
+.dato-pil:focus-visible { outline: 3px solid var(--trening-tittel); outline-offset: 2px; }
+
+.dato-etikett { font-weight: 800; font-size: 16px; }
+
+.sjekk-kort.annen-dag { border-color: var(--warn); }
+.sjekk-kort.annen-dag .dato-nav { background: var(--warn-soft); }
+.sjekk-kort.annen-dag .dato-etikett { color: var(--warn); }
+
+.oura-okt {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+
+.oura-tilgang { margin: 12px 0 0; }
+.oura-tilgang a { color: var(--accent); font-weight: 700; }

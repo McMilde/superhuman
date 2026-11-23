@@ -131,7 +131,11 @@ def _jobb_morgen(conn, i_dag, synk, sender):
         except Exception as feil:
             print(f"Synk før morgenmelding feilet: {feil}")
     melding = coach.hent_eller_lag_dagsmelding(conn, i_dag)
-    send_til_alle(conn, melding["tittel"], _forste_setning(melding["tekst"]), "/", sender=sender)
+    tekst = _forste_setning(melding["tekst"])
+    veid = conn.execute("SELECT 1 FROM vektlogg WHERE dato = ?", (i_dag.isoformat(),)).fetchone()
+    if not veid:
+        tekst += " Husk å veie deg ⚖️"
+    send_til_alle(conn, melding["tittel"], tekst, "/", sender=sender)
     return True
 
 

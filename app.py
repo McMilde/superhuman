@@ -300,6 +300,8 @@ def init_db():
         conn.execute("ALTER TABLE oura_konto ADD COLUMN siste_feil TEXT")
     if "siste_feil_tidspunkt" not in oura_konto_kolonner:
         conn.execute("ALTER TABLE oura_konto ADD COLUMN siste_feil_tidspunkt TEXT")
+    if "okt_tilgang" not in oura_konto_kolonner:
+        conn.execute("ALTER TABLE oura_konto ADD COLUMN okt_tilgang INTEGER")
 
     conn.execute(
         """
@@ -676,6 +678,25 @@ def oura_synk():
                 )
                 antall_nye += 1
 
+    # Treningsøkter krever egen tillatelse («workout»). Mangler den, fortsetter
+    # synken som før – appen ber ham bare koble til Oura på nytt.
+    try:
+        okt_svar = requests.get(
+            "https://api.ouraring.com/v2/usercollection/workout",
+            params={"start_date": (date.fromisoformat(start_dato) - timedelta(days=3)).isoformat(),
+                    "end_date": (date.today() + timedelta(days=1)).isoformat()},
+            headers=headers,
+            timeout=15,
+        )
+        if okt_svar.status_code == 200:
+            livsstil.lagre_oura_okter(db, livsstil.tolk_oura_okter(okt_svar.json()))
+            livsstil.bruk_oura_okter(db)
+            db.execute("UPDATE oura_konto SET okt_tilgang = 1 WHERE id = 1")
+        elif okt_svar.status_code in (401, 403):
+            db.execute("UPDATE oura_konto SET okt_tilgang = 0 WHERE id = 1")
+    except requests.RequestException:
+        pass
+
     db.execute(
         "UPDATE oura_konto SET siste_dag_synket = ?, sist_synket = ?, "
         "siste_feil = NULL, siste_feil_tidspunkt = NULL WHERE id = 1",
@@ -696,7 +717,7 @@ def oura_connect():
         "response_type": "code",
         "client_id": OURA_CLIENT_ID,
         "redirect_uri": OURA_REDIRECT_URI,
-        "scope": "daily",
+        "scope": "daily workout",
         "state": state,
     }
     return redirect("https://cloud.ouraring.com/oauth/authorize?" + urlencode(parametre))
@@ -1046,13 +1067,34 @@ def api_lagre_dagssjekk():
     data = request.get_json(force=True) or {}
     dato = data.get("dato") or livsstil.i_dag_oslo().isoformat()
     try:
+        if date.fromisoformat(dato) > livsstil.i_dag_oslo():
+            return jsonify({"error": "Du kan ikke registrere dager frem i tid"}), 400
+        db = get_db()
         rad = livsstil.lagre_dagssjekk(
-            get_db(), dato, data.get("fastet"), data.get("alkohol"), data.get("alkohol_enheter"),
+            db, dato, data.get("fastet"), data.get("alkohol"), data.get("alkohol_enheter"),
             data.get("trent"), data.get("syk"), data.get("notat"),
         )
-    except ValueError:
+        livsstil.marker_okter_sett(db, dato)
+    except (ValueError, TypeError):
         return jsonify({"error": "Ugyldig dato"}), 400
     return jsonify(rad)
+
+
+@app.route("/api/dag-detaljer")
+def api_dag_detaljer():
+    dato = request.args.get("dato") or livsstil.i_dag_oslo().isoformat()
+    try:
+        date.fromisoformat(dato)
+    except ValueError:
+        return jsonify({"error": "Ugyldig dato"}), 400
+    db = get_db()
+    konto = db.execute("SELECT okt_tilgang FROM oura_konto WHERE id = 1").fetchone()
+    return jsonify({
+        "dato": dato,
+        "dagssjekk": livsstil.dagsstatus(db, dato),
+        "oura_okter": livsstil.oura_okter_for_dato(db, dato),
+        "oura_okt_tilgang": None if konto is None else konto["okt_tilgang"] != 0,
+    })
 
 
 @app.route("/api/historikk")

@@ -21,7 +21,7 @@ import app as app_modul  # noqa: E402
 RYDD_TABELLER = [
     "dagslogg", "vektlogg", "dagssjekk", "ukeplan", "helgeplan", "dagsmelding",
     "chat", "push_abonnement", "varsel_logg", "oura_malinger", "withings_malinger",
-    "withings_konto", "oura_konto", "middag_vurdering", "ukemal",
+    "withings_konto", "oura_konto", "middag_vurdering", "ukemal", "oura_okter",
 ]
 
 

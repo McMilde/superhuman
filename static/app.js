@@ -92,7 +92,10 @@ async function lastIdag() {
   }
   $("toppDato").textContent = langDato(dagData.dato);
   visCoach(dagData);
+  if (!valgtDato || valgtDato === sisteIdag) valgtDato = dagData.dato;
+  sisteIdag = dagData.dato;
   visSjekk(dagData.dagssjekk);
+  velgDato(valgtDato);
   visHelg(dagData);
   visUkemal(dagData.ukemal);
   visMiddag(dagData.middag);
@@ -126,20 +129,65 @@ function visSjekk(s) {
   $("sjekkNotat").value = sjekk.notat;
 }
 
+// ---- Bla mellom dager ----
+
+const MAKS_DAGER_TILBAKE = 30;
+let valgtDato = null;
+let sisteIdag = null;
+
+function flyttDato(iso, dager) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + dager);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function datoEtikett(iso) {
+  if (iso === sisteIdag) return "I dag";
+  if (iso === flyttDato(sisteIdag, -1)) return "I går";
+  const d = new Date(`${iso}T12:00:00`);
+  return `${UKEDAG[d.getDay()][0].toUpperCase()}${UKEDAG[d.getDay()].slice(1)} ${d.getDate()}. ${MANED[d.getMonth()].slice(0, 3)}`;
+}
+
+async function lastDagDetaljer(dato) {
+  const d = await hentJson(`/api/dag-detaljer?dato=${dato}`).catch(() => null);
+  if (!d || dato !== valgtDato) return;
+  visSjekk(d.dagssjekk);
+  const tellende = d.oura_okter.filter((o) => o.teller);
+  if (!d.dagssjekk && tellende.length && !sjekk.trent) {
+    sjekk.trent = true;
+    document.querySelector('.sjekk-rute[data-felt="trent"]').setAttribute("aria-pressed", "true");
+  }
+  const okt = $("ouraOkt");
+  okt.textContent = d.oura_okter.length
+    ? "Oura: " + d.oura_okter.map((o) => `${o.aktivitet} ${o.minutter} min`).join(", ")
+    : "";
+  okt.classList.toggle("hidden", !d.oura_okter.length);
+  $("ouraTilgang").classList.toggle("hidden", d.oura_okt_tilgang !== false);
+}
+
+function velgDato(dato) {
+  const tidligste = flyttDato(sisteIdag, -MAKS_DAGER_TILBAKE);
+  if (dato > sisteIdag || dato < tidligste) return;
+  valgtDato = dato;
+  $("datoEtikett").textContent = datoEtikett(dato);
+  $("sjekkKort").classList.toggle("annen-dag", dato !== sisteIdag);
+  $("nesteDagBtn").disabled = dato >= sisteIdag;
+  $("forrigeDagBtn").disabled = dato <= tidligste;
+  lastDagDetaljer(dato);
+}
+
 let lagretTimer = null;
 
 async function lagreSjekk() {
   try {
-    const rad = await postJson("/api/dagssjekk", { ...sjekk, dato: dagData ? dagData.dato : idagDato() });
+    const rad = await postJson("/api/dagssjekk", { ...sjekk, dato: valgtDato || (dagData ? dagData.dato : idagDato()) });
     const hint = $("sjekkLagret");
-    hint.textContent = "Lagret";
+    hint.textContent = valgtDato === sisteIdag ? "Lagret" : `Lagret for ${datoEtikett(valgtDato).toLowerCase()}`;
     hint.classList.remove("hidden");
     clearTimeout(lagretTimer);
     lagretTimer = setTimeout(() => hint.classList.add("hidden"), 1500);
-    if (dagData) {
-      dagData.dagssjekk = rad;
-      lastAlkoholInnsikt();
-    }
+    if (dagData && valgtDato === sisteIdag) dagData.dagssjekk = rad;
+    lastAlkoholInnsikt();
   } catch (e) {
     const hint = $("sjekkLagret");
     hint.textContent = "Ble ikke lagret – prøv igjen";
@@ -294,8 +342,7 @@ async function endreEnhet(endring) {
   btn.disabled = true;
   try {
     const r = await postJson("/api/dagssjekk/enhet", { endring });
-    if (r.dagssjekk) visSjekk(r.dagssjekk);
-    else visSjekk(null);
+    if (valgtDato === sisteIdag) visSjekk(r.dagssjekk || null);
     dagData.helg.brukt = r.brukt_i_helgen;
     visTeller(dagData.helg, true);
     lastAlkoholInnsikt();
@@ -1290,6 +1337,7 @@ async function lastHistorikk() {
         <li class="historikk-rad">
           <div class="historikk-rad-header">
             <span class="historikk-dato">${formaterDato(d.dato)} · ${d.ukedag_navn}</span>
+            ${sisteIdag && d.dato >= flyttDato(sisteIdag, -MAKS_DAGER_TILBAKE) ? `<button type="button" class="lenke-knapp" data-endre-dag="${d.dato}">Endre</button>` : ""}
           </div>
           <div class="merke-rad">${merker || '<span class="merke merke-ingen">Ingen avkrysning</span>'}</div>
           ${d.notat ? `<div class="historikk-notater">${escapeHtml(d.notat)}</div>` : ""}
@@ -1350,6 +1398,15 @@ function main() {
     $("helgVisning").classList.add("hidden");
   });
   $("plussEnhetBtn").addEventListener("click", () => endreEnhet(1));
+  $("forrigeDagBtn").addEventListener("click", () => velgDato(flyttDato(valgtDato, -1)));
+  $("nesteDagBtn").addEventListener("click", () => velgDato(flyttDato(valgtDato, 1)));
+  $("historikkListe").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-endre-dag]");
+    if (!btn) return;
+    visFane("idag");
+    velgDato(btn.dataset.endreDag);
+    setTimeout(() => $("sjekkKort").scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  });
   $("ukemalLagreBtn").addEventListener("click", lagreUkemal);
   $("ukemalEndreBtn").addEventListener("click", () => visUkemal(dagData.ukemal, true));
   $("egetUkemal").addEventListener("input", () => {

@@ -132,10 +132,19 @@
         <button type="button" class="btn primary" id="slaPaVarslerBtn">Slå på varsler</button>
       </div>
 
-      <div class="card">
+      <div class="card sjekk-kort" id="sjekkKort">
         <div class="card-header">
           <h2>Hvordan var dagen?</h2>
           <span class="hint lagret-hint hidden" id="sjekkLagret">Lagret</span>
+        </div>
+        <div class="dato-nav">
+          <button type="button" class="dato-pil" id="forrigeDagBtn" aria-label="Forrige dag">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span class="dato-etikett" id="datoEtikett">I dag</span>
+          <button type="button" class="dato-pil" id="nesteDagBtn" aria-label="Neste dag">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
         <div class="sjekk-grid" id="sjekkGrid">
           <button type="button" class="sjekk-rute" data-felt="fastet" aria-pressed="false">
@@ -155,11 +164,13 @@
             <span>Syk</span>
           </button>
         </div>
+        <p class="oura-okt hidden" id="ouraOkt"></p>
+        <p class="hint oura-tilgang hidden" id="ouraTilgang">Vil du at treningsøkter fra Oura krysser av «Trent» automatisk? <a href="/oura/connect">Koble til Oura på nytt</a> og godta tilgang til treningsøkter.</p>
         <label class="enheter-rad hidden" id="enheterRad">Antall enheter
           <input type="text" id="alkoholEnheter" inputmode="decimal" placeholder="F.eks. 2" />
         </label>
         <label class="notat-rad">Notat (valgfritt)
-          <textarea id="sjekkNotat" rows="2" placeholder="Noe du vil huske om i dag?"></textarea>
+          <textarea id="sjekkNotat" rows="2" placeholder="Noe du vil huske fra dagen?"></textarea>
         </label>
       </div>
 

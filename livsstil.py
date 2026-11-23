@@ -69,6 +69,15 @@ def opprett_tabeller(conn) -> None:
             vurdering INTEGER NOT NULL,
             oppdatert TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
+        CREATE TABLE IF NOT EXISTS oura_okter (
+            id TEXT PRIMARY KEY,
+            dato TEXT NOT NULL,
+            aktivitet TEXT NOT NULL,
+            minutter INTEGER NOT NULL,
+            kalorier REAL,
+            intensitet TEXT,
+            brukt INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS ukemal (
             uke_start TEXT PRIMARY KEY,
             mal TEXT,
@@ -765,3 +774,86 @@ def sett_middag(conn, uke_start: date, dag: str, middag: dict) -> dict:
     middager = [({**ny, "dag": dag} if m["dag"] == dag else m) for m in plan["middager"]]
     return lagre_ukeplan(conn, uke_start, plan["treningsdager"], middager, plan["lunsj"], plan["kilde"],
                          antall_trening=plan["antall_trening"])
+
+
+
+# ---- Treningsøkter fra Oura ----
+
+MIN_OKT_MINUTTER = 20
+AKTIVITET_NAVN = {
+    "rowing": "Roing", "walking": "Gåtur", "running": "Løping", "cycling": "Sykling",
+    "strength_training": "Styrketrening", "hiking": "Fottur", "swimming": "Svømming",
+    "elliptical": "Ellipsemaskin", "yoga": "Yoga", "dancing": "Dans", "skiing": "Ski",
+    "cross_country_skiing": "Langrenn", "pilates": "Pilates", "tennis": "Tennis", "football": "Fotball",
+}
+
+
+def tolk_oura_okter(svar: dict) -> list:
+    okter = []
+    for o in (svar or {}).get("data", []):
+        try:
+            start = datetime.fromisoformat(o["start_datetime"])
+            slutt = datetime.fromisoformat(o["end_datetime"])
+            dato = o["day"] or start.date().isoformat()
+        except (KeyError, TypeError, ValueError):
+            continue
+        okter.append({
+            "id": str(o.get("id") or f"{dato}-{o.get('start_datetime')}"),
+            "dato": dato,
+            "aktivitet": o.get("activity") or "other",
+            "minutter": max(0, round((slutt - start).total_seconds() / 60)),
+            "kalorier": o.get("calories"),
+            "intensitet": o.get("intensity"),
+        })
+    return okter
+
+
+def lagre_oura_okter(conn, okter: list) -> None:
+    for o in okter:
+        conn.execute(
+            """
+            INSERT INTO oura_okter (id, dato, aktivitet, minutter, kalorier, intensitet)
+            VALUES (:id, :dato, :aktivitet, :minutter, :kalorier, :intensitet)
+            ON CONFLICT(id) DO UPDATE SET dato = excluded.dato, aktivitet = excluded.aktivitet,
+                minutter = excluded.minutter, kalorier = excluded.kalorier, intensitet = excluded.intensitet
+            """,
+            o,
+        )
+    conn.commit()
+
+
+def bruk_oura_okter(conn) -> int:
+    """Krysser av «Trent» for dager med en ny Oura-økt på minst 20 min. Hver
+    økt brukes én gang, så et kryss han har fjernet selv ikke settes tilbake.
+    Lager aldri nye dager (det ville gjort dagen «alkoholfri» uten at han sa det)."""
+    antall = 0
+    for o in conn.execute("SELECT id, dato FROM oura_okter WHERE brukt = 0 AND minutter >= ?",
+                          (MIN_OKT_MINUTTER,)).fetchall():
+        rad = hent_dagssjekk(conn, o["dato"])
+        if rad is None:
+            continue
+        if not rad["trent"]:
+            lagre_dagssjekk(conn, o["dato"], rad["fastet"], rad["alkohol"], rad["alkohol_enheter"],
+                            True, rad["syk"], rad["notat"])
+            antall += 1
+        conn.execute("UPDATE oura_okter SET brukt = 1 WHERE id = ?", (o["id"],))
+    conn.commit()
+    return antall
+
+
+def marker_okter_sett(conn, dato: str) -> None:
+    """Når han selv lagrer en dag, har han sett Oura-øktene – de skal ikke
+    overstyre valget hans senere."""
+    conn.execute("UPDATE oura_okter SET brukt = 1 WHERE dato = ?", (dato,))
+    conn.commit()
+
+
+def oura_okter_for_dato(conn, dato: str) -> list:
+    return [
+        {
+            "aktivitet": AKTIVITET_NAVN.get(r["aktivitet"], r["aktivitet"].replace("_", " ").capitalize()),
+            "minutter": r["minutter"],
+            "teller": r["minutter"] >= MIN_OKT_MINUTTER,
+        }
+        for r in conn.execute("SELECT aktivitet, minutter FROM oura_okter WHERE dato = ? ORDER BY minutter DESC", (dato,))
+    ]
