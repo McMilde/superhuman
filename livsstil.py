@@ -63,6 +63,12 @@ def opprett_tabeller(conn) -> None:
             auth TEXT NOT NULL,
             opprettet TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
+        CREATE TABLE IF NOT EXISTS middag_vurdering (
+            nokkel TEXT PRIMARY KEY,
+            navn TEXT NOT NULL,
+            vurdering INTEGER NOT NULL,
+            oppdatert TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
         CREATE TABLE IF NOT EXISTS ukemal (
             uke_start TEXT PRIMARY KEY,
             mal TEXT,
@@ -249,6 +255,16 @@ def velg_treningsdager(uke_start: date, antall: int) -> list:
     return [(uke_start + timedelta(days=i)).isoformat() for i in _FORDELING[_klem(antall)]]
 
 
+def standard_prep_steg(lunsj: dict) -> list:
+    return [
+        "Finn fram 5 matbokser og alt fra handlelista som hører til lunsjen.",
+        "Kutt det som skal kuttes først, så går resten fort.",
+        "Lag selve retten etter oppskriften over. Lag gjerne dobbelt så mye grønnsaker som du tror du trenger.",
+        "La maten avkjøles i 15–20 minutter før du fordeler den i boksene.",
+        "Sett boksene i kjøleskapet – de holder i 4–5 dager. Frys gjerne én hvis fredagen er usikker.",
+    ]
+
+
 def _rad_til_plan(rad) -> dict:
     plan = {
         "uke_start": rad["uke_start"],
@@ -259,6 +275,8 @@ def _rad_til_plan(rad) -> dict:
         "kilde": rad["kilde"],
         "laget": rad["laget"],
     }
+    if not plan["lunsj"].get("steg"):
+        plan["lunsj"]["steg"] = standard_prep_steg(plan["lunsj"])
     plan["handleliste"] = handleliste(plan)
     return plan
 
@@ -308,10 +326,18 @@ def lagre_ukeplan(conn, uke_start: date, treningsdager, middager, lunsj, kilde, 
     return hent_ukeplan(conn, uke_start)
 
 
+def tilgjengelige_reservemiddager(conn) -> list:
+    """Reservemiddagene minus dem familien har gitt tommel ned."""
+    unnga = {n.lower() for n in hent_vurderinger(conn)["unnga"]}
+    ledige = [m for m in RESERVE_MIDDAGER if m["navn"].lower() not in unnga]
+    return ledige if len(ledige) >= 5 else ledige + [m for m in RESERVE_MIDDAGER if m not in ledige][:5 - len(ledige)]
+
+
 def lag_reserveplan(conn, uke_start: date) -> dict:
     antall = neste_antall_trening(conn, uke_start)
     uke_nr = uke_start.isocalendar()[1]
-    middager = [RESERVE_MIDDAGER[(uke_nr * 5 + i) % len(RESERVE_MIDDAGER)] for i in range(5)]
+    ledige = tilgjengelige_reservemiddager(conn)
+    middager = [ledige[(uke_nr * 5 + i) % len(ledige)] for i in range(5)]
     return lagre_ukeplan(conn, uke_start, velg_treningsdager(uke_start, antall), middager,
                          RESERVE_LUNSJ, "reserve", antall_trening=antall)
 
@@ -692,3 +718,50 @@ def aktivt_ukemal(conn, i_dag: date, lag_forslag=None) -> dict:
         "forslag": forslag,
         "statistikk": ukestatistikk(conn, uke - timedelta(days=7)),
     }
+
+
+
+# ---- Smartere mat ----
+
+def vurder_middag(conn, navn: str, vurdering: int) -> None:
+    navn = (navn or "").strip()[:120]
+    if not navn:
+        raise ValueError("Mangler navn på middagen.")
+    if isinstance(vurdering, bool) or vurdering not in (-1, 0, 1):
+        raise ValueError("Vurdering må være -1, 0 eller 1.")
+    if vurdering == 0:
+        conn.execute("DELETE FROM middag_vurdering WHERE nokkel = ?", (navn.lower(),))
+    else:
+        conn.execute(
+            """
+            INSERT INTO middag_vurdering (nokkel, navn, vurdering) VALUES (?, ?, ?)
+            ON CONFLICT(nokkel) DO UPDATE SET vurdering = excluded.vurdering, oppdatert = datetime('now', 'localtime')
+            """,
+            (navn.lower(), navn, vurdering),
+        )
+    conn.commit()
+
+
+def hent_vurderinger(conn) -> dict:
+    rader = conn.execute("SELECT navn, vurdering FROM middag_vurdering ORDER BY oppdatert, navn").fetchall()
+    return {
+        "favoritter": [r["navn"] for r in rader if r["vurdering"] > 0],
+        "unnga": [r["navn"] for r in rader if r["vurdering"] < 0],
+    }
+
+
+def sett_middag(conn, uke_start: date, dag: str, middag: dict) -> dict:
+    plan = hent_eller_lag_ukeplan(conn, uke_start)
+    if middag_for_dag(plan, dag) is None:
+        raise ValueError("Den dagen har ingen middag i planen.")
+    if not str(middag.get("navn") or "").strip():
+        raise ValueError("Middagen mangler navn.")
+    ny = {
+        "navn": str(middag["navn"]).strip()[:120],
+        "minutter": int(middag.get("minutter") or 30),
+        "beskrivelse": str(middag.get("beskrivelse") or "")[:400],
+        "ingredienser": [str(i)[:80] for i in (middag.get("ingredienser") or [])][:20],
+    }
+    middager = [({**ny, "dag": dag} if m["dag"] == dag else m) for m in plan["middager"]]
+    return lagre_ukeplan(conn, uke_start, plan["treningsdager"], middager, plan["lunsj"], plan["kilde"],
+                         antall_trening=plan["antall_trening"])

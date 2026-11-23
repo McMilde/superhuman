@@ -217,22 +217,52 @@
     <section id="tab-mat" class="tab-panel">
       <div class="card">
         <h2>Middager denne uka</h2>
-        <p class="hint">Raske middager hele familien kan spise. Trykk «Bytt» hvis noe ikke frister.</p>
+        <p class="hint">Raske middager hele familien kan spise. Gi tommel opp eller ned, så lærer coachen hva dere liker.</p>
         <ul id="middagListe" class="middag-liste"></ul>
       </div>
+
+      <div class="card">
+        <h2>Hva har vi?</h2>
+        <p class="hint">Skriv hva som er i kjøleskapet, så foreslår coachen en middag.</p>
+        <textarea id="kjoleskapTekst" rows="2" placeholder="F.eks. kyllingfilet, paprika, ris og rømme"></textarea>
+        <button type="button" class="btn primary" id="kjoleskapBtn">Foreslå middag</button>
+        <p class="feiltekst hidden" id="kjoleskapFeil"></p>
+        <div id="kjoleskapForslag" class="kjoleskap-forslag hidden">
+          <strong class="middag-rad-navn" id="kjoleskapNavn"></strong>
+          <p class="hint" id="kjoleskapInfo"></p>
+          <ul id="kjoleskapIngredienser" class="tips-liste"></ul>
+          <button type="button" class="btn" id="kjoleskapBrukBtn">Bruk som dagens middag</button>
+        </div>
+      </div>
+
       <div class="card">
         <h2 id="lunsjNavn">Lunsj i bokser</h2>
         <p class="hint" id="lunsjInfo"></p>
         <p id="lunsjBeskrivelse"></p>
+        <h3 class="under-tittel">Slik lager du boksene på søndag</h3>
+        <ol id="prepSteg" class="prep-steg"></ol>
         <h3 class="under-tittel">Gode pålegg på surdeigsbrød</h3>
         <ul id="brodtips" class="tips-liste"></ul>
       </div>
+
       <div class="card">
         <div class="card-header">
           <h2>Handleliste</h2>
           <button type="button" class="lenke-knapp" id="nullstillHandleliste">Fjern avkrysning</button>
         </div>
         <ul id="handleliste" class="handleliste"></ul>
+      </div>
+
+      <div class="card hidden" id="smakKort">
+        <h2>Det familien liker</h2>
+        <div id="favorittBlokk">
+          <h3 class="under-tittel">Favoritter</h3>
+          <ul id="favorittListe" class="smak-liste"></ul>
+        </div>
+        <div id="unngaBlokk">
+          <h3 class="under-tittel">Kommer ikke igjen</h3>
+          <ul id="unngaListe" class="smak-liste"></ul>
+        </div>
       </div>
     </section>
 

@@ -37,6 +37,7 @@ class Ukemeny(BaseModel):
     lunsj: Middag
     brodtips: list[str]
     antall_trening: int
+    lunsj_steg: list[str] = []
 
 
 class HelgTips(BaseModel):
@@ -234,18 +235,31 @@ def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag, k
 
 # ---- Ukeplan og middager ----
 
+def _smak_tekst(conn) -> str:
+    v = livsstil.hent_vurderinger(conn)
+    deler = []
+    if v["favoritter"]:
+        deler.append("Familiens favoritter (bruk gjerne én av dem, eller noe i samme stil): " + ", ".join(v["favoritter"]) + ".")
+    if v["unnga"]:
+        deler.append("Familien liker IKKE disse – ikke foreslå dem eller noe veldig likt: " + ", ".join(v["unnga"]) + ".")
+    return " ".join(deler)
+
+
 def _be_om_meny(conn, uke_start: date, forslag: int):
     oppgave = (
         f"Lag ukeplan for uka som starter {uke_start.isoformat()}: nøyaktig 5 middager (mandag-fredag), "
         "raske (maks 30 min), sunne og barnevennlige, med enkel ingrediensliste (norske navn, med mengde). "
         "Varier fisk, kylling og kjøtt. Lag én lunsj som lages søndag og holder i 4-5 dager i matboks, og 4 tips "
-        "til mettende pålegg på surdeigsbrød. Velg antall treningsdager (2-5); "
-        f"forslaget basert på forrige uke er {forslag}.\n\n" + lag_sammendrag(conn, uke_start)
+        "til mettende pålegg på surdeigsbrød. Gi også 4-6 korte, nummererbare steg (lunsj_steg) for å lage "
+        "lunsjboksene på søndag på under 45 minutter. Velg antall treningsdager (2-5); "
+        f"forslaget basert på forrige uke er {forslag}. " + _smak_tekst(conn) + "\n\n" + lag_sammendrag(conn, uke_start)
     )
     meny = sporr_claude(SYSTEM_PROMPT, oppgave, Ukemeny, "medium", tidsavbrudd=150)
     if len(meny.middager) < 5:
         raise CoachUtilgjengelig("for få middager")
     lunsj = {**meny.lunsj.model_dump(), "brodtips": meny.brodtips}
+    if len(meny.lunsj_steg) >= 3:
+        lunsj["steg"] = meny.lunsj_steg[:8]
     return meny, [m.model_dump() for m in meny.middager[:5]], lunsj
 
 
@@ -287,11 +301,11 @@ def bytt_middag(conn, uke_start: date, dag: str) -> dict:
         ny = sporr_claude(
             SYSTEM_PROMPT,
             "Foreslå én ny rask, sunn og barnevennlig middag (maks 30 min) med ingrediensliste. "
-            f"Den må være forskjellig fra: {', '.join(sorted(brukte))}.",
+            f"Den må være forskjellig fra: {', '.join(sorted(brukte))}. " + _smak_tekst(conn),
             Middag, "low",
         ).model_dump()
     except CoachUtilgjengelig:
-        ledige = [m for m in livsstil.RESERVE_MIDDAGER if m["navn"] not in brukte]
+        ledige = [m for m in livsstil.tilgjengelige_reservemiddager(conn) if m["navn"] not in brukte]
         ny = dict(ledige[0] if ledige else livsstil.RESERVE_MIDDAGER[0])
     middager = [({**ny, "dag": dag} if m["dag"] == dag else m) for m in plan["middager"]]
     return livsstil.lagre_ukeplan(conn, uke_start, plan["treningsdager"], middager, plan["lunsj"],
@@ -474,3 +488,28 @@ def ukemal_forslag(conn, uke_start: date) -> list:
         return [f.strip() for f in svar.forslag[:3]]
     except CoachUtilgjengelig:
         return reserve
+
+
+
+def _ord(tekst: str) -> set:
+    import re
+    return {o for o in re.findall(r"[a-zæøå]+", tekst.lower()) if len(o) > 2}
+
+
+def middag_fra_kjoleskap(conn, tekst: str) -> dict:
+    """Én middag ut fra det han har i kjøleskapet. Reserve: den reservemiddagen
+    som deler flest ord med det han skrev."""
+    try:
+        m = sporr_claude(
+            SYSTEM_PROMPT,
+            f"Eivin har dette hjemme: «{tekst[:500]}». Foreslå én rask, sunn og barnevennlig middag (maks 30 min) "
+            "som bruker mest mulig av dette. Ingrediensene skal være det han trenger – marker gjerne det han "
+            "eventuelt må kjøpe med «(kjøp)». " + _smak_tekst(conn),
+            Middag, "low",
+        )
+        return {**m.model_dump(), "kilde": "claude"}
+    except CoachUtilgjengelig:
+        har = _ord(tekst)
+        kandidater = livsstil.tilgjengelige_reservemiddager(conn)
+        beste = max(kandidater, key=lambda m: len(har & _ord(m["navn"] + " " + " ".join(m["ingredienser"]))))
+        return {**beste, "kilde": "reserve"}

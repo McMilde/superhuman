@@ -1150,8 +1150,41 @@ def api_i_dag():
 
 @app.route("/api/mat")
 def api_mat():
+    db = get_db()
     uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
-    return jsonify(_hent_ukeplan(get_db(), uke_start))
+    return jsonify({**_hent_ukeplan(db, uke_start), "vurderinger": livsstil.hent_vurderinger(db)})
+
+
+@app.route("/api/mat/vurder", methods=["POST"])
+def api_mat_vurder():
+    data = request.get_json(force=True) or {}
+    try:
+        livsstil.vurder_middag(get_db(), data.get("navn"), data.get("vurdering"))
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+    return jsonify(livsstil.hent_vurderinger(get_db()))
+
+
+@app.route("/api/mat/hva-har-vi", methods=["POST"])
+def api_hva_har_vi():
+    tekst = ((request.get_json(force=True) or {}).get("tekst") or "").strip()
+    if not tekst:
+        return jsonify({"error": "Skriv hva du har i kjøleskapet"}), 400
+    return jsonify(coach.middag_fra_kjoleskap(get_db(), tekst))
+
+
+@app.route("/api/mat/bruk", methods=["POST"])
+def api_mat_bruk():
+    data = request.get_json(force=True) or {}
+    middag = data.get("middag")
+    if not isinstance(middag, dict):
+        return jsonify({"error": "Mangler middag"}), 400
+    db = get_db()
+    try:
+        plan = livsstil.sett_middag(db, livsstil.mandag_for(livsstil.i_dag_oslo()), str(data.get("dag") or ""), middag)
+    except (ValueError, TypeError) as feil:
+        return jsonify({"error": str(feil)}), 400
+    return jsonify({**plan, "vurderinger": livsstil.hent_vurderinger(db)})
 
 
 @app.route("/api/mat/bytt", methods=["POST"])
@@ -1159,7 +1192,8 @@ def api_mat_bytt():
     data = request.get_json(force=True) or {}
     uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
     try:
-        return jsonify(coach.bytt_middag(get_db(), uke_start, str(data.get("dag") or "")))
+        plan = coach.bytt_middag(get_db(), uke_start, str(data.get("dag") or ""))
+        return jsonify({**plan, "vurderinger": livsstil.hent_vurderinger(get_db())})
     except ValueError:
         return jsonify({"error": "Ugyldig dag"}), 400
 

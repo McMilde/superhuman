@@ -490,28 +490,120 @@ async function lastMat() {
   visMat();
 }
 
+const TOMMEL_OPP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 18.4 21H7V10l4-8a3 3 0 0 1 4 3.9z"/></svg>';
+const TOMMEL_NED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3"/><path d="M9 18.1 10 14H4.2a2 2 0 0 1-2-2.4l1.4-7A2 2 0 0 1 5.6 3H17v11l-4 8a3 3 0 0 1-4-3.9z"/></svg>';
+
+function vurderingFor(navn) {
+  const v = matData.vurderinger || { favoritter: [], unnga: [] };
+  const n = navn.toLowerCase();
+  if (v.favoritter.some((f) => f.toLowerCase() === n)) return 1;
+  if (v.unnga.some((f) => f.toLowerCase() === n)) return -1;
+  return 0;
+}
+
 function visMat() {
   const iDag = idagDato();
   $("middagListe").innerHTML = matData.middager
-    .map(
-      (m) => `
+    .map((m, i) => {
+      const v = vurderingFor(m.navn);
+      return `
       <li class="middag-rad${m.dag === iDag ? " middag-idag" : ""}">
         <div class="middag-rad-topp">
           <span class="middag-dag">${kortUkedag(m.dag)}${m.dag === iDag ? " – i dag" : ""}</span>
-          <button type="button" class="lenke-knapp" data-bytt="${m.dag}">Bytt</button>
+          <span class="middag-handlinger">
+            <button type="button" class="tommel${v === 1 ? " valgt" : ""}" aria-pressed="${v === 1}" aria-label="Liker" data-vurder="1" data-i="${i}">${TOMMEL_OPP}</button>
+            <button type="button" class="tommel tommel-ned${v === -1 ? " valgt" : ""}" aria-pressed="${v === -1}" aria-label="Liker ikke" data-vurder="-1" data-i="${i}">${TOMMEL_NED}</button>
+            <button type="button" class="lenke-knapp${v === -1 ? " bytt-fremhevet" : ""}" data-bytt="${m.dag}">Bytt</button>
+          </span>
         </div>
         <strong class="middag-rad-navn">${escapeHtml(m.navn)}</strong>
         <p class="hint">${m.minutter} min · ${escapeHtml(m.beskrivelse)}</p>
-        <details><summary>Ingredienser</summary><ul>${m.ingredienser.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>
-      </li>`
-    )
+        <details><summary>Ingredienser</summary><ul>${m.ingredienser.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></details>
+      </li>`;
+    })
     .join("");
   const l = matData.lunsj;
   $("lunsjNavn").textContent = l.navn;
   $("lunsjInfo").textContent = `Lag søndag · ${l.minutter} min`;
   $("lunsjBeskrivelse").textContent = l.beskrivelse;
   $("brodtips").innerHTML = (l.brodtips || []).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  visPrepSteg();
   visHandleliste();
+  visSmak();
+  $("kjoleskapBrukBtn").classList.toggle("hidden", !matData.middager.some((m) => m.dag === iDag));
+}
+
+function prepNokkel() {
+  return `prep-${matData.uke_start}`;
+}
+
+function visPrepSteg() {
+  const ferdig = hentLokalt(prepNokkel(), []);
+  $("prepSteg").innerHTML = (matData.lunsj.steg || [])
+    .map((s, i) => `<li><button type="button" class="prep-knapp${ferdig.includes(i) ? " ferdig" : ""}" aria-pressed="${ferdig.includes(i)}" data-steg="${i}">${escapeHtml(s)}</button></li>`)
+    .join("");
+}
+
+function visSmak() {
+  const v = matData.vurderinger || { favoritter: [], unnga: [] };
+  $("smakKort").classList.toggle("hidden", !v.favoritter.length && !v.unnga.length);
+  const rad = (navn) => `<li><span>${escapeHtml(navn)}</span><button type="button" class="lenke-knapp" data-angre="${escapeHtml(navn)}">Fjern</button></li>`;
+  $("favorittBlokk").classList.toggle("hidden", !v.favoritter.length);
+  $("unngaBlokk").classList.toggle("hidden", !v.unnga.length);
+  $("favorittListe").innerHTML = v.favoritter.map(rad).join("");
+  $("unngaListe").innerHTML = v.unnga.map(rad).join("");
+}
+
+async function vurder(navn, vurdering) {
+  try {
+    matData.vurderinger = await postJson("/api/mat/vurder", { navn, vurdering });
+    visMat();
+  } catch (e) {}
+}
+
+let kjoleskapMiddag = null;
+
+async function foreslaFraKjoleskap() {
+  const tekst = $("kjoleskapTekst").value.trim();
+  const feil = $("kjoleskapFeil");
+  feil.classList.add("hidden");
+  if (!tekst) {
+    feil.textContent = "Skriv hva du har først, f.eks. «egg, skinke og paprika».";
+    feil.classList.remove("hidden");
+    return;
+  }
+  const btn = $("kjoleskapBtn");
+  btn.disabled = true;
+  btn.textContent = "Tenker …";
+  try {
+    kjoleskapMiddag = await postJson("/api/mat/hva-har-vi", { tekst });
+    $("kjoleskapNavn").textContent = kjoleskapMiddag.navn;
+    $("kjoleskapInfo").textContent = `${kjoleskapMiddag.minutter} min · ${kjoleskapMiddag.beskrivelse}`;
+    $("kjoleskapIngredienser").innerHTML = kjoleskapMiddag.ingredienser.map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+    $("kjoleskapBrukBtn").textContent = "Bruk som dagens middag";
+    $("kjoleskapBrukBtn").disabled = false;
+    $("kjoleskapForslag").classList.remove("hidden");
+  } catch (e) {
+    feil.textContent = e.message;
+    feil.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Foreslå middag";
+  }
+}
+
+async function brukKjoleskapMiddag() {
+  if (!kjoleskapMiddag) return;
+  const btn = $("kjoleskapBrukBtn");
+  btn.disabled = true;
+  try {
+    matData = await postJson("/api/mat/bruk", { dag: idagDato(), middag: kjoleskapMiddag });
+    visMat();
+    btn.textContent = "Lagt inn som dagens middag";
+  } catch (e) {
+    btn.textContent = e.message;
+    btn.disabled = false;
+  }
 }
 
 function handlelisteNokkel() {
@@ -1295,8 +1387,29 @@ function main() {
   lukkVedKlikkUtenfor("tiderOverlay", () => $("tiderOverlay").classList.add("hidden"));
 
   $("middagListe").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-bytt]");
-    if (btn) byttMiddag(btn.dataset.bytt, btn);
+    const bytt = e.target.closest("[data-bytt]");
+    if (bytt) return byttMiddag(bytt.dataset.bytt, bytt);
+    const tommel = e.target.closest("[data-vurder]");
+    if (tommel) {
+      const m = matData.middager[Number(tommel.dataset.i)];
+      const ny = Number(tommel.dataset.vurder);
+      vurder(m.navn, vurderingFor(m.navn) === ny ? 0 : ny);
+    }
+  });
+  $("kjoleskapBtn").addEventListener("click", foreslaFraKjoleskap);
+  $("kjoleskapBrukBtn").addEventListener("click", brukKjoleskapMiddag);
+  $("prepSteg").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-steg]");
+    if (!btn) return;
+    const ferdig = new Set(hentLokalt(prepNokkel(), []));
+    const i = Number(btn.dataset.steg);
+    ferdig.has(i) ? ferdig.delete(i) : ferdig.add(i);
+    lagreLokalt(prepNokkel(), [...ferdig]);
+    visPrepSteg();
+  });
+  $("smakKort").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-angre]");
+    if (btn) vurder(btn.dataset.angre, 0);
   });
   $("handleliste").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-vare]");

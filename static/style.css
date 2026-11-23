@@ -1518,3 +1518,92 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 
 .rekke-forklaring { margin: 10px 0 4px; }
 .rekke-forklaring.frikort-brukt { color: var(--warn); font-weight: 700; }
+
+
+/* ---------- Smartere mat ---------- */
+
+.middag-handlinger { display: flex; align-items: center; gap: 4px; }
+
+.tommel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tommel svg { width: 20px; height: 20px; }
+.tommel.valgt { background: var(--accent-soft); color: var(--accent); }
+.tommel-ned.valgt { background: var(--warn-soft); color: var(--warn); }
+.tommel:focus-visible { outline: 3px solid var(--trening-tittel); outline-offset: 1px; }
+
+.bytt-fremhevet { color: var(--warn); }
+
+.kjoleskap-forslag {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+
+.kjoleskap-forslag .hint { margin: 4px 0 8px; }
+#tab-mat textarea { margin-bottom: 10px; }
+
+.prep-steg {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: steg;
+}
+
+.prep-steg li { counter-increment: steg; }
+
+.prep-knapp {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.prep-knapp::before {
+  content: counter(steg);
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  background: var(--muted-soft);
+  color: var(--muted);
+}
+
+.prep-knapp.ferdig { color: var(--muted); text-decoration: line-through; }
+.prep-knapp.ferdig::before { content: "✓"; background: var(--accent); color: #ffffff; }
+
+.smak-liste { list-style: none; margin: 0; padding: 0; }
+
+.smak-liste li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  min-height: 44px;
+}
