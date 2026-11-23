@@ -1398,3 +1398,81 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 }
 
 .spart-blokk .inline-form { margin-bottom: 10px; }
+
+
+/* ---------- Helgeplan 2.0 ---------- */
+
+.helg-kort .inline-form { margin-bottom: 12px; }
+
+.teller-tall { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
+.teller-tall strong { font-size: 40px; line-height: 1; color: var(--accent-dark); }
+
+.teller-bar {
+  height: 14px;
+  border-radius: 999px;
+  background: var(--muted-soft);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.teller-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.teller-bar span.over { background: var(--warn); }
+
+.teller-knapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.teller-pluss { min-height: 52px; padding: 0 28px; font-size: 17px; }
+
+.teller-melding {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.plan-forslag {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.plan-valg {
+  text-align: left;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plan-valg[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.plan-valg:focus-visible { outline: 3px solid var(--trening-tittel); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .teller-bar span { transition: none; }
+}

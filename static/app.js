@@ -241,6 +241,9 @@ function visMiddag(m) {
   $("middagInfo").textContent = `${m.minutter} min · ${m.beskrivelse}`;
 }
 
+let valgtePlaner = new Set();
+let planForslag = [];
+
 function visHelg(d) {
   const kort = $("helgKort");
   const viaLenke = location.hash === "#helg";
@@ -249,14 +252,53 @@ function visHelg(d) {
   kort.classList.toggle("hidden", !(d.er_fredag_til_sondag || viaLenke || harOppsummering));
   const harPlan = helg && helg.planlagte_enheter != null;
   $("helgSkjema").classList.toggle("hidden", harPlan);
+  $("helgPlanvalg").classList.add("hidden");
   $("helgVisning").classList.toggle("hidden", !harPlan);
   if (harPlan) {
-    $("helgTall").textContent = helg.planlagte_enheter;
+    visTeller(helg, d.er_fredag_til_sondag);
     $("helgTips").innerHTML = helg.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+    $("planerVisning").classList.toggle("hidden", !helg.planer.length);
+    $("helgPlaner").innerHTML = helg.planer.map((t) => `<li>${escapeHtml(t)}</li>`).join("");
   }
   const opps = $("helgOppsummering");
   opps.textContent = harOppsummering ? helg.oppsummering : "";
   opps.classList.toggle("hidden", !harOppsummering);
+}
+
+function visTeller(helg, iHelgen) {
+  const brukt = helg.brukt || 0;
+  const plan = helg.planlagte_enheter;
+  $("helgBrukt").textContent = tall(brukt, brukt % 1 ? 1 : 0);
+  $("helgTall").textContent = plan;
+  const andel = plan > 0 ? Math.min(100, (brukt / plan) * 100) : brukt > 0 ? 100 : 0;
+  $("tellerFyll").style.width = `${andel}%`;
+  $("tellerFyll").classList.toggle("over", brukt > plan);
+  $("helgSluttTekst").textContent = helg.sluttid ? `Kvelden er over kl. ${helg.sluttid} – du får et varsel da.` : "";
+  $("tellerKnapper").classList.toggle("hidden", !iHelgen);
+  const melding = $("tellerMelding");
+  let tekst = "";
+  if (brukt > 0 && brukt === plan) tekst = "Det var planen din. Bytt til vann eller alkoholfritt nå – du klarte det.";
+  else if (brukt > plan) tekst = "Du er over planen. Det er helt greit å stoppe her – et glass vann nå hjelper.";
+  melding.textContent = tekst;
+  melding.classList.toggle("hidden", !tekst);
+}
+
+async function endreEnhet(endring) {
+  const btn = $("plussEnhetBtn");
+  btn.disabled = true;
+  try {
+    const r = await postJson("/api/dagssjekk/enhet", { endring });
+    if (r.dagssjekk) visSjekk(r.dagssjekk);
+    else visSjekk(null);
+    dagData.helg.brukt = r.brukt_i_helgen;
+    visTeller(dagData.helg, true);
+    lastAlkoholInnsikt();
+  } catch (e) {
+    $("tellerMelding").textContent = e.message;
+    $("tellerMelding").classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function lagreHelg() {
@@ -266,9 +308,16 @@ async function lagreHelg() {
   btn.disabled = true;
   btn.textContent = "Lagrer …";
   try {
-    const r = await postJson("/api/helg", { planlagte_enheter: $("helgEnheter").value.trim() });
-    dagData.helg = { ...(dagData.helg || {}), planlagte_enheter: r.planlagte_enheter, tips: r.tips };
-    visHelg(dagData);
+    const r = await postJson("/api/helg", {
+      planlagte_enheter: $("helgEnheter").value.trim(),
+      sluttid: $("helgSluttid").value || "22:00",
+    });
+    const tidligerePlaner = (dagData.helg && dagData.helg.planer) || [];
+    dagData.helg = { ...r, planer: tidligerePlaner };
+    planForslag = r.planforslag || [];
+    valgtePlaner = new Set(tidligerePlaner.filter((p) => planForslag.includes(p)));
+    $("egenPlan").value = tidligerePlaner.find((p) => !planForslag.includes(p)) || "";
+    visPlanvalg();
   } catch (e) {
     feil.textContent = e.message;
     feil.classList.remove("hidden");
@@ -276,6 +325,29 @@ async function lagreHelg() {
     btn.disabled = false;
     btn.textContent = "Lagre plan";
   }
+}
+
+function visPlanvalg() {
+  $("helgSkjema").classList.add("hidden");
+  $("helgVisning").classList.add("hidden");
+  $("helgPlanvalg").classList.remove("hidden");
+  $("planForslag").innerHTML = planForslag
+    .map((p, i) => `<button type="button" class="plan-valg" aria-pressed="${valgtePlaner.has(p)}" data-plan="${i}">${escapeHtml(p)}</button>`)
+    .join("");
+}
+
+async function lagrePlaner() {
+  const planer = [...valgtePlaner];
+  const egen = $("egenPlan").value.trim();
+  if (egen) planer.push(egen);
+  const btn = $("planerLagreBtn");
+  btn.disabled = true;
+  try {
+    const r = await postJson("/api/helg/planer", { planer });
+    dagData.helg.planer = r.planer;
+  } catch (e) {}
+  btn.disabled = false;
+  visHelg(dagData);
 }
 
 async function visVanskelig() {
@@ -469,7 +541,7 @@ async function apneTider() {
 async function lagreTider(e) {
   e.preventDefault();
   const form = $("tiderForm");
-  const data = Object.fromEntries(["morgen", "middag", "helg", "kveld", "sondag"].map((k) => [k, form.elements[k].value]));
+  const data = Object.fromEntries(["morgen", "middag", "helg", "kveld", "sondag", "risiko"].map((k) => [k, form.elements[k].value]));
   try {
     await postJson("/api/innstillinger/varsler", data);
     $("tiderOverlay").classList.add("hidden");
@@ -1111,8 +1183,19 @@ function main() {
   });
   $("helgEndreBtn").addEventListener("click", () => {
     $("helgEnheter").value = dagData.helg.planlagte_enheter;
+    $("helgSluttid").value = dagData.helg.sluttid || "22:00";
     $("helgSkjema").classList.remove("hidden");
     $("helgVisning").classList.add("hidden");
+  });
+  $("plussEnhetBtn").addEventListener("click", () => endreEnhet(1));
+  $("minusEnhetBtn").addEventListener("click", () => endreEnhet(-1));
+  $("planerLagreBtn").addEventListener("click", lagrePlaner);
+  $("planForslag").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-plan]");
+    if (!btn) return;
+    const plan = planForslag[Number(btn.dataset.plan)];
+    valgtePlaner.has(plan) ? valgtePlaner.delete(plan) : valgtePlaner.add(plan);
+    btn.setAttribute("aria-pressed", valgtePlaner.has(plan));
   });
   $("vanskeligBtn").addEventListener("click", visVanskelig);
   $("vanskeligLukk").addEventListener("click", () => $("vanskeligKort").classList.add("hidden"));

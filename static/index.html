@@ -57,6 +57,53 @@
         </div>
       </article>
 
+      <div class="card helg-kort hidden" id="helgKort">
+        <h2>Helgeplan</h2>
+        <div id="helgSkjema">
+          <p class="hint">Bestem nå, mens du er edru: hvor mange enheter skal du ha fra fredag til søndag, og når er kvelden over?</p>
+          <div class="inline-form">
+            <label>Enheter
+              <input type="text" id="helgEnheter" inputmode="numeric" placeholder="F.eks. 4" />
+            </label>
+            <label>Sluttidspunkt
+              <input type="time" id="helgSluttid" value="22:00" />
+            </label>
+          </div>
+          <button type="button" class="btn primary" id="helgLagreBtn">Lagre plan</button>
+          <p class="feiltekst hidden" id="helgFeil"></p>
+        </div>
+
+        <div id="helgPlanvalg" class="hidden">
+          <p class="hint">Velg én eller to planer for øyeblikkene der det pleier å glippe – eller skriv din egen.</p>
+          <div id="planForslag" class="plan-forslag"></div>
+          <label>Egen plan (valgfritt)
+            <input type="text" id="egenPlan" placeholder="Hvis … så …" />
+          </label>
+          <button type="button" class="btn primary" id="planerLagreBtn">Lagre planene</button>
+        </div>
+
+        <div id="helgVisning" class="hidden">
+          <div class="teller">
+            <p class="teller-tall"><strong id="helgBrukt">0</strong> av <span id="helgTall">0</span> enheter</p>
+            <div class="teller-bar"><span id="tellerFyll"></span></div>
+            <p class="hint" id="helgSluttTekst"></p>
+            <div class="teller-knapper hidden" id="tellerKnapper">
+              <button type="button" class="btn primary teller-pluss" id="plussEnhetBtn">+1 enhet</button>
+              <button type="button" class="lenke-knapp" id="minusEnhetBtn">Angre</button>
+            </div>
+            <p class="teller-melding hidden" id="tellerMelding"></p>
+          </div>
+          <div id="planerVisning" class="hidden">
+            <h3 class="under-tittel">Planene dine</h3>
+            <ul id="helgPlaner" class="tips-liste"></ul>
+          </div>
+          <h3 class="under-tittel">Tips</h3>
+          <ul id="helgTips" class="tips-liste"></ul>
+          <button type="button" class="lenke-knapp" id="helgEndreBtn">Endre plan</button>
+        </div>
+        <p class="helg-oppsummering hidden" id="helgOppsummering"></p>
+      </div>
+
       <div class="card vanskelig-kort hidden" id="vanskeligKort">
         <p id="vanskeligTekst"></p>
         <button type="button" class="lenke-knapp" id="vanskeligLukk">Takk, det hjalp</button>
@@ -137,26 +184,6 @@
             <p class="feiltekst hidden" id="utgangspunktFeil"></p>
           </div>
         </div>
-      </div>
-
-      <div class="card helg-kort hidden" id="helgKort">
-        <h2>Helgeplan</h2>
-        <div id="helgSkjema">
-          <p class="hint">Bestem nå, mens du er edru: hvor mange enheter skal du ha fra fredag til søndag?</p>
-          <div class="inline-form">
-            <label>Enheter
-              <input type="text" id="helgEnheter" inputmode="numeric" placeholder="F.eks. 4" />
-            </label>
-            <button type="button" class="btn primary" id="helgLagreBtn">Lagre plan</button>
-          </div>
-          <p class="feiltekst hidden" id="helgFeil"></p>
-        </div>
-        <div id="helgVisning" class="hidden">
-          <p class="helg-tall"><strong id="helgTall"></strong> enheter denne helgen</p>
-          <ul id="helgTips" class="tips-liste"></ul>
-          <button type="button" class="lenke-knapp" id="helgEndreBtn">Endre antall</button>
-        </div>
-        <p class="helg-oppsummering hidden" id="helgOppsummering"></p>
       </div>
 
       <div class="card middag-kort" id="middagKort">
@@ -265,6 +292,7 @@
         <label>Helgeplan (fredag) <input type="time" name="helg" required /></label>
         <label>Kryss av dagen (kveld) <input type="time" name="kveld" required /></label>
         <label>Ny ukemeny (søndag) <input type="time" name="sondag" required /></label>
+        <label>Dytt på dager det pleier å glippe <input type="time" name="risiko" required /></label>
         <p class="feiltekst hidden" id="tiderFeil"></p>
         <div class="modal-actions">
           <button type="button" class="btn" id="testVarselBtn">Send testvarsel</button>

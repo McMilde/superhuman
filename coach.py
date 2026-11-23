@@ -43,6 +43,10 @@ class HelgTips(BaseModel):
     tips: list[str]
 
 
+class HvisSaa(BaseModel):
+    planer: list[str]
+
+
 SYSTEM_PROMPT = """Du er Eivins personlige livsstilscoach i appen hans. Skriv alltid på norsk (bokmål).
 
 Om Eivin:
@@ -186,11 +190,15 @@ RESERVE_DAG = [
 
 
 def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag, kun_reserve=False) -> dict:
+    over = livsstil.helg_over_plan(conn, i_dag)
     try:
         if kun_reserve:
             raise CoachUtilgjengelig("før morgenmeldingen")
         oppgave = (
             "Skriv dagens morgenmelding til Eivin. Tittel: maks 6 ord. Tekst: 2-4 korte setninger. "
+            + (f"Det er mandag, og helgen ble mer enn planlagt ({over[1]:g} enheter mot planlagt {over[0]}). "
+               "Skriv en varm nullstilling helt uten skam, og gi én konkret plan for uka. " if over else "")
+            + 
             f"Treningsdag i dag: {'ja' if treningsdag else 'nei'}. "
             + (f"Treningen er flyttet fordi: {flytt_grunn} " if flytt_grunn else "")
             + (f"Middag i dag: {middag['navn']}. " if middag else "")
@@ -203,6 +211,9 @@ def lag_dagsmelding(conn, i_dag: date, treningsdag: bool, flytt_grunn, middag, k
         deler = [RESERVE_DAG[i_dag.toordinal() % len(RESERVE_DAG)]]
         if flytt_grunn:
             deler.insert(0, flytt_grunn)
+        if over:
+            deler.insert(0, f"Ny uke, blanke ark. Helgen ble litt mer enn planlagt ({over[1]:g} mot {over[0]}) – det skjer. "
+                            "Denne uka: alkoholfrie hverdager, én kveld om gangen.")
         rekke = livsstil.alkoholfrie_hverdager_pa_rad(conn, i_dag)
         if rekke >= 2:
             deler.append(f"Du har {rekke} alkoholfrie hverdager på rad – sterkt!")
@@ -327,15 +338,40 @@ def vanskelig_na(conn) -> str:
 RESERVE_HELG_TIPS = [
     "Kjøp bare inn akkurat det antallet du har bestemt – ingenting ekstra i skapet.",
     "Drikk et glass vann mellom hver enhet.",
-    "Bestem et sluttidspunkt nå, og si det høyt til noen.",
+    "Spis et skikkelig måltid før du begynner – det er lettere å stoppe når du er mett.",
 ]
+
+
+RESERVE_HVIS_SAA = [
+    "Hvis jeg får lyst på mer enn planen, så tar jeg en alkoholfri øl eller kullsyrevann først og venter 20 minutter.",
+    "Hvis noen byr meg på en til, så sier jeg «nei takk, jeg kjører i morgen tidlig».",
+    "Hvis klokka er blitt sluttidspunktet, så pusser jeg tennene – da er kvelden over.",
+]
+
+
+def hvis_saa_forslag(conn, planlagte_enheter: int) -> list:
+    """Tre konkrete «hvis–så»-planer for helgen. Brukes også uten tilkobling."""
+    try:
+        svar = sporr_claude(
+            SYSTEM_PROMPT,
+            f"Eivin har planlagt maks {planlagte_enheter} enheter i helgen. Foreslå nøyaktig 3 korte «hvis–så»-planer "
+            "(én setning hver, start med «Hvis ...») for situasjonene der det typisk glipper: når suget kommer etter "
+            "de første enhetene, når noen byr på mer, og når kvelden drar ut. Konkret og vennlig."
+            + ("\n\n" + lag_sammendrag(conn, livsstil.i_dag_oslo()) if conn is not None else ""),
+            HvisSaa, "low",
+        )
+        if len(svar.planer) < 3:
+            raise CoachUtilgjengelig("for få planer")
+        return svar.planer[:3]
+    except CoachUtilgjengelig:
+        return list(RESERVE_HVIS_SAA)
 
 
 def helg_tips(conn, planlagte_enheter: int) -> list:
     try:
         svar = sporr_claude(
             SYSTEM_PROMPT,
-            f"Eivin har bestemt maks {planlagte_enheter} enheter alkohol denne helgen (fredag-søndag). "
+            f"Eivin har bestemt maks {planlagte_enheter} enheter alkohol denne helgen (fredag-søndag), og har allerede satt et sluttidspunkt. "
             "Gi 2-3 korte, konkrete tips som hjelper ham å holde planen, gitt at han har vanskelig for å stoppe når han først begynner.",
             HelgTips, "low",
         )

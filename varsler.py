@@ -84,7 +84,8 @@ def send_til_alle(conn, tittel: str, tekst: str, url: str = "/", sender=None) ->
 
 # ---- Planlagte varsler ----
 
-STANDARD_TIDER = {"morgen": "07:00", "middag": "15:30", "helg": "15:00", "kveld": "21:00", "sondag": "18:00"}
+STANDARD_TIDER = {"morgen": "07:00", "middag": "15:30", "helg": "15:00", "kveld": "21:00", "sondag": "18:00",
+                  "risiko": "16:30"}
 VINDU_MINUTTER = 90
 
 
@@ -179,12 +180,48 @@ def _jobb_sondag(conn, i_dag, synk, sender):
     return True
 
 
+def _jobb_risiko(conn, i_dag, synk, sender):
+    import livsstil
+    dag = livsstil.risikodag(conn, i_dag)
+    if dag != i_dag.isoweekday():
+        return False
+    navn = livsstil.UKEDAG_NAVN[dag - 1]
+    send_til_alle(conn, f"{navn.capitalize()}er pleier å være vanskelige",
+                  "Bestem nå hva du skal drikke i kveld – f.eks. alkoholfri øl eller kullsyrevann med sitron.", "/",
+                  sender=sender)
+    return True
+
+
+def _jobb_sluttid(conn, i_dag, synk, sender):
+    import livsstil
+    plan = livsstil.hent_helgeplan(conn, livsstil.mandag_for(i_dag))
+    brukt = plan["brukt"]
+    planlagt = plan["planlagte_enheter"]
+    hale = "Godt holdt – nå er kvelden over." if brukt <= planlagt else "Nå er det lurt å bytte til vann."
+    send_til_alle(conn, f"Klokka er {plan['sluttid']}",
+                  f"Sluttidspunktet ditt. Du har brukt {brukt:g} av {planlagt} enheter i helgen. {hale}", "/#helg",
+                  sender=sender)
+    return True
+
+
+def _sluttid_i_dag(conn, i_dag):
+    """Sluttidspunktet fra helgeplanen, men bare fredag og lørdag."""
+    import livsstil
+    if i_dag.isoweekday() not in (5, 6):
+        return None
+    plan = livsstil.hent_helgeplan(conn, livsstil.mandag_for(i_dag))
+    if not plan or plan["planlagte_enheter"] is None:
+        return None
+    return plan["sluttid"]
+
+
 JOBBER = {
     "morgen": (lambda d: True, _jobb_morgen),
     "middag": (lambda d: d.isoweekday() <= 5, _jobb_middag),
     "helg": (lambda d: d.isoweekday() == 5, _jobb_helg),
     "kveld": (lambda d: True, _jobb_kveld),
     "sondag": (lambda d: d.isoweekday() == 7, _jobb_sondag),
+    "risiko": (lambda d: d.isoweekday() <= 4, _jobb_risiko),
 }
 
 
@@ -195,8 +232,11 @@ def kjor_planlagte_jobber(conn, naa, synk=None, sender=None) -> list:
     i_dag = naa.date()
     minutter_na = naa.hour * 60 + naa.minute
     fyrt = []
-    for type_, tid in hent_tider(conn).items():
-        dag_ok, jobb = JOBBER[type_]
+    planlagte = [(type_, tid) + JOBBER[type_] for type_, tid in hent_tider(conn).items()]
+    sluttid = _sluttid_i_dag(conn, i_dag)
+    if sluttid:
+        planlagte.append(("sluttid", sluttid, lambda d: True, _jobb_sluttid))
+    for type_, tid, dag_ok, jobb in planlagte:
         t, m = (int(x) for x in tid.split(":"))
         start = t * 60 + m
         if not dag_ok(i_dag) or not (start <= minutter_na < start + VINDU_MINUTTER):

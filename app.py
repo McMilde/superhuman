@@ -1088,14 +1088,7 @@ def api_historikk():
 # ---- Coach, mat og helg ----
 
 def _helgeplan(db, uke_start):
-    rad = db.execute("SELECT * FROM helgeplan WHERE uke_start = ?", (uke_start.isoformat(),)).fetchone()
-    if not rad:
-        return None
-    return {
-        "planlagte_enheter": rad["planlagte_enheter"],
-        "tips": json.loads(rad["tips"] or "[]"),
-        "oppsummering": rad["oppsummering"],
-    }
+    return livsstil.hent_helgeplan(db, uke_start)
 
 
 _OPPGRADERING_FORSOK = {}
@@ -1191,25 +1184,45 @@ def api_vanskelig():
 
 @app.route("/api/helg", methods=["POST"])
 def api_helg():
-    verdi = (request.get_json(force=True) or {}).get("planlagte_enheter")
+    data = request.get_json(force=True) or {}
+    verdi = data.get("planlagte_enheter")
     try:
         enheter = int(verdi)
     except (TypeError, ValueError):
         return jsonify({"error": "Skriv et tall"}), 400
     if isinstance(verdi, bool) or not 0 <= enheter <= 30:
         return jsonify({"error": "Velg mellom 0 og 30 enheter"}), 400
+    sluttid = (data.get("sluttid") or livsstil.STANDARD_SLUTTID).strip()
+    if not varsler._gyldig_tid(sluttid):
+        return jsonify({"error": "Skriv sluttidspunktet som tt:mm, f.eks. 22:00"}), 400
     db = get_db()
     uke_start = livsstil.mandag_for(livsstil.i_dag_oslo())
     tips = coach.helg_tips(db, enheter)
-    db.execute(
-        """
-        INSERT INTO helgeplan (uke_start, planlagte_enheter, tips) VALUES (?, ?, ?)
-        ON CONFLICT(uke_start) DO UPDATE SET planlagte_enheter = excluded.planlagte_enheter, tips = excluded.tips
-        """,
-        (uke_start.isoformat(), enheter, json.dumps(tips, ensure_ascii=False)),
-    )
-    db.commit()
-    return jsonify({"planlagte_enheter": enheter, "tips": tips})
+    plan = livsstil.lagre_helgeplan(db, uke_start, enheter, tips, sluttid)
+    return jsonify({**plan, "planforslag": coach.hvis_saa_forslag(db, enheter)})
+
+
+@app.route("/api/helg/planer", methods=["POST"])
+def api_helg_planer():
+    planer = (request.get_json(force=True) or {}).get("planer")
+    if not isinstance(planer, list):
+        return jsonify({"error": "Ugyldige planer"}), 400
+    try:
+        lagret = livsstil.lagre_helg_planer(get_db(), livsstil.mandag_for(livsstil.i_dag_oslo()), planer)
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+    return jsonify({"planer": lagret})
+
+
+@app.route("/api/dagssjekk/enhet", methods=["POST"])
+def api_endre_enhet():
+    endring = (request.get_json(force=True) or {}).get("endring")
+    if isinstance(endring, bool) or endring not in (1, -1):
+        return jsonify({"error": "Endring må være +1 eller -1"}), 400
+    db = get_db()
+    i_dag = livsstil.i_dag_oslo()
+    rad = livsstil.endre_enheter(db, i_dag.isoformat(), endring)
+    return jsonify({"dagssjekk": rad, "brukt_i_helgen": livsstil.brukt_i_helgen(db, livsstil.mandag_for(i_dag))})
 
 
 # ---- Hva alkoholen gjør med deg ----

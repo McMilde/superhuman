@@ -78,6 +78,11 @@ def opprett_tabeller(conn) -> None:
     for kol in ("alkohol_utgangspunkt_uke", "alkohol_kr_per_enhet"):
         if kol not in kolonner:
             conn.execute(f"ALTER TABLE innstillinger ADD COLUMN {kol} REAL")
+    helg_kolonner = {r[1] for r in conn.execute("PRAGMA table_info(helgeplan)")}
+    if "sluttid" not in helg_kolonner:
+        conn.execute("ALTER TABLE helgeplan ADD COLUMN sluttid TEXT")
+    if "planer" not in helg_kolonner:
+        conn.execute("ALTER TABLE helgeplan ADD COLUMN planer TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
 
 
@@ -470,3 +475,104 @@ def alkohol_spart(conn):
         "dager": len(rader),
         "fra_dato": min(r["dato"] for r in rader),
     }
+
+
+
+# ---- Helgeplan 2.0 ----
+
+STANDARD_SLUTTID = "22:00"
+
+
+def brukt_i_helgen(conn, uke_start: date) -> float:
+    datoer = [(uke_start + timedelta(days=i)).isoformat() for i in (4, 5, 6)]
+    sum_ = conn.execute(
+        "SELECT COALESCE(SUM(alkohol_enheter), 0) FROM dagssjekk WHERE alkohol = 1 AND dato IN (?, ?, ?)", datoer
+    ).fetchone()[0]
+    return float(sum_)
+
+
+def hent_helgeplan(conn, uke_start: date):
+    rad = conn.execute("SELECT * FROM helgeplan WHERE uke_start = ?", (uke_start.isoformat(),)).fetchone()
+    if not rad:
+        return None
+    return {
+        "planlagte_enheter": rad["planlagte_enheter"],
+        "tips": json.loads(rad["tips"] or "[]"),
+        "oppsummering": rad["oppsummering"],
+        "sluttid": rad["sluttid"] or (STANDARD_SLUTTID if rad["planlagte_enheter"] is not None else None),
+        "planer": json.loads(rad["planer"] or "[]"),
+        "brukt": brukt_i_helgen(conn, uke_start),
+    }
+
+
+def lagre_helgeplan(conn, uke_start: date, enheter: int, tips: list, sluttid: str) -> dict:
+    conn.execute(
+        """
+        INSERT INTO helgeplan (uke_start, planlagte_enheter, tips, sluttid) VALUES (?, ?, ?, ?)
+        ON CONFLICT(uke_start) DO UPDATE SET planlagte_enheter = excluded.planlagte_enheter,
+            tips = excluded.tips, sluttid = excluded.sluttid
+        """,
+        (uke_start.isoformat(), enheter, json.dumps(tips, ensure_ascii=False), sluttid),
+    )
+    conn.commit()
+    return hent_helgeplan(conn, uke_start)
+
+
+def lagre_helg_planer(conn, uke_start: date, planer: list) -> list:
+    if hent_helgeplan(conn, uke_start) is None:
+        raise ValueError("Lag helgeplanen først.")
+    rene = [str(p).strip()[:200] for p in (planer or []) if str(p).strip()][:3]
+    conn.execute("UPDATE helgeplan SET planer = ? WHERE uke_start = ?",
+                 (json.dumps(rene, ensure_ascii=False), uke_start.isoformat()))
+    conn.commit()
+    return rene
+
+
+def endre_enheter(conn, dato: str, endring: int):
+    """+1 / -1 enhet på en dag, uten å røre de andre avkrysningene."""
+    rad = hent_dagssjekk(conn, dato)
+    if rad is None:
+        if endring < 0:
+            return None
+        return lagre_dagssjekk(conn, dato, False, True, endring, False, False, "")
+    enheter = max(0.0, (rad["alkohol_enheter"] or 0) + endring)
+    alkohol = enheter > 0
+    return lagre_dagssjekk(conn, dato, rad["fastet"], alkohol, enheter if alkohol else None,
+                           rad["trent"], rad["syk"], rad["notat"])
+
+
+UKEDAG_NAVN = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"]
+
+
+def risikodag(conn, i_dag: date):
+    """Hverdagen (1=man ... 4=tor) han oftest har drukket på de siste 8 ukene,
+    hvis det har skjedd minst to ganger. Ellers None."""
+    fra = (i_dag - timedelta(days=56)).isoformat()
+    teller = {}
+    for r in conn.execute("SELECT dato FROM dagssjekk WHERE alkohol = 1 AND dato >= ? AND dato < ?",
+                          (fra, i_dag.isoformat())):
+        dag = date.fromisoformat(r["dato"]).isoweekday()
+        if dag <= 4:
+            teller[dag] = teller.get(dag, 0) + 1
+    if not teller:
+        return None
+    dag, antall = max(sorted(teller.items()), key=lambda x: x[1])
+    return dag if antall >= 2 else None
+
+
+def helg_over_plan(conn, i_dag: date):
+    """På mandager: (planlagt, faktisk) hvis forrige helg gikk over planen."""
+    if i_dag.isoweekday() != 1:
+        return None
+    forrige = i_dag - timedelta(days=7)
+    plan = hent_helgeplan(conn, forrige)
+    if not plan or plan["planlagte_enheter"] is None:
+        return None
+    datoer = [(forrige + timedelta(days=i)).isoformat() for i in (4, 5, 6)]
+    faktisk = sum(
+        (r["alkohol_enheter"] if r["alkohol_enheter"] is not None else ENHETER_NAAR_UKJENT)
+        for r in conn.execute("SELECT alkohol_enheter FROM dagssjekk WHERE alkohol = 1 AND dato IN (?, ?, ?)", datoer)
+    )
+    if faktisk > plan["planlagte_enheter"]:
+        return plan["planlagte_enheter"], faktisk
+    return None
