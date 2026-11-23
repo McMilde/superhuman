@@ -94,7 +94,7 @@ async function lastIdag() {
   visSjekk(dagData.dagssjekk);
   visHelg(dagData);
   visMiddag(dagData.middag);
-  visRekke(dagData.alkoholfri_rekke);
+  lastAlkoholInnsikt();
 }
 
 function visCoach(d) {
@@ -136,8 +136,7 @@ async function lagreSjekk() {
     lagretTimer = setTimeout(() => hint.classList.add("hidden"), 1500);
     if (dagData) {
       dagData.dagssjekk = rad;
-      const r = await hentJson("/api/i-dag").catch(() => null);
-      if (r) visRekke(r.alkoholfri_rekke);
+      lastAlkoholInnsikt();
     }
   } catch (e) {
     const hint = $("sjekkLagret");
@@ -154,13 +153,81 @@ function veksleSjekk(felt) {
   lagreSjekk();
 }
 
-function visRekke(antall) {
-  const el = $("alkoholfriRekke");
-  if (antall >= 1) {
-    el.textContent = `${antall} alkoholfri${antall === 1 ? "" : "e"} hverdag${antall === 1 ? "" : "er"} på rad`;
-    el.classList.remove("hidden");
+function tall(n, desimaler = 0) {
+  return Number(n).toLocaleString("nb-NO", { minimumFractionDigits: desimaler, maximumFractionDigits: desimaler });
+}
+
+function kortDato(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  return `${d.getDate()}. ${MANED[d.getMonth()]}`;
+}
+
+function effektRad(navn, med, uten) {
+  if (med == null || uten == null) return "";
+  const diff = med - uten;
+  const tekst = diff < 0 ? `${tall(Math.abs(diff))} poeng lavere` : diff > 0 ? `${tall(diff)} poeng høyere` : "ingen forskjell";
+  return `
+    <div class="effekt-topp"><span>${navn}</span><strong class="${diff < 0 ? "effekt-ned" : ""}">${tekst}</strong></div>
+    <div class="effekt-stolpe"><span class="effekt-etikett">Etter alkohol</span><span class="effekt-bar effekt-bar-med" style="--v:${med}%"></span><span class="effekt-verdi">${med}</span></div>
+    <div class="effekt-stolpe"><span class="effekt-etikett">Uten</span><span class="effekt-bar" style="--v:${uten}%"></span><span class="effekt-verdi">${uten}</span></div>`;
+}
+
+let innsiktData = null;
+
+async function lastAlkoholInnsikt() {
+  innsiktData = await hentJson("/api/alkohol-innsikt").catch(() => null);
+  if (!innsiktData) return;
+  const d = innsiktData;
+  $("rekkeNa").textContent = d.rekke;
+  $("rekkeBeste").textContent = Math.max(d.beste_rekke, d.rekke);
+
+  const e = d.effekt;
+  $("effektVisning").classList.toggle("hidden", !e.nok_data);
+  $("effektVenter").classList.toggle("hidden", e.nok_data);
+  if (e.nok_data) {
+    $("effektRestitusjon").innerHTML = effektRad("Restitusjon (Oura)", e.restitusjon_med, e.restitusjon_uten);
+    $("effektSovn").innerHTML = effektRad("Søvn (Oura)", e.sovn_med, e.sovn_uten);
+    $("effektGrunnlag").textContent = `Snitt av dine egne tall: ${e.dager_med} dager etter alkohol og ${e.dager_uten} dager uten.`;
   } else {
-    el.classList.add("hidden");
+    const mangler = [];
+    if (e.trengs_uten > 0) mangler.push(`${e.trengs_uten} ${e.trengs_uten === 1 ? "kveld" : "kvelder"} uten alkohol`);
+    if (e.trengs_med > 0) mangler.push(`${e.trengs_med} med alkohol`);
+    $("effektVenter").textContent =
+      `Her får du se hvordan alkohol påvirker søvnen og restitusjonen din, målt med Oura. ` +
+      `Appen trenger minst 5 kvelder av hver for å sammenligne – det mangler ${mangler.join(" og ")}. Bare kryss av som vanlig.`;
+  }
+
+  const s = d.spart;
+  const harUtgangspunkt = !!d.utgangspunkt;
+  $("spartSkjema").classList.toggle("hidden", harUtgangspunkt);
+  $("spartVisning").classList.toggle("hidden", !harUtgangspunkt);
+  if (harUtgangspunkt) {
+    if (!s) {
+      $("spartHoved").textContent = "Kryss av noen dager, så regner appen ut hva du sparer.";
+      $("spartUnder").textContent = "";
+    } else if (s.enheter_spart > 0) {
+      $("spartHoved").textContent = `${tall(s.kr)} kr og ${tall(s.kalorier)} kalorier`;
+      $("spartUnder").textContent =
+        `Siden ${kortDato(s.fra_dato)}: ${tall(s.enheter_spart, s.enheter_spart % 1 ? 1 : 0)} færre enheter enn før – omtrent ${tall(s.kg, 1)} kg fett.`;
+    } else {
+      $("spartHoved").textContent = "Ingen besparelse ennå";
+      $("spartUnder").textContent = `Siden ${kortDato(s.fra_dato)} har du drukket omtrent som før. Hver alkoholfrie dag teller fra nå.`;
+    }
+  }
+}
+
+async function lagreUtgangspunkt() {
+  const feil = $("utgangspunktFeil");
+  feil.classList.add("hidden");
+  try {
+    await postJson("/api/alkohol-innsikt/utgangspunkt", {
+      enheter_per_uke: $("utgangspunktEnheter").value.trim(),
+      kr_per_enhet: $("utgangspunktKr").value.trim(),
+    });
+    await lastAlkoholInnsikt();
+  } catch (e) {
+    feil.textContent = e.message;
+    feil.classList.remove("hidden");
   }
 }
 
@@ -1032,6 +1099,16 @@ function main() {
   });
 
   $("helgLagreBtn").addEventListener("click", lagreHelg);
+  $("utgangspunktLagreBtn").addEventListener("click", lagreUtgangspunkt);
+  $("spartEndreBtn").addEventListener("click", () => {
+    const u = innsiktData && innsiktData.utgangspunkt;
+    if (u) {
+      $("utgangspunktEnheter").value = String(u.enheter_per_uke).replace(".", ",");
+      $("utgangspunktKr").value = String(u.kr_per_enhet).replace(".", ",");
+    }
+    $("spartSkjema").classList.remove("hidden");
+    $("spartVisning").classList.add("hidden");
+  });
   $("helgEndreBtn").addEventListener("click", () => {
     $("helgEnheter").value = dagData.helg.planlagte_enheter;
     $("helgSkjema").classList.remove("hidden");

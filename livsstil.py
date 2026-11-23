@@ -75,6 +75,9 @@ def opprett_tabeller(conn) -> None:
     for kol in ("varsel_tider", "vapid_privat", "vapid_offentlig"):
         if kol not in kolonner:
             conn.execute(f"ALTER TABLE innstillinger ADD COLUMN {kol} TEXT")
+    for kol in ("alkohol_utgangspunkt_uke", "alkohol_kr_per_enhet"):
+        if kol not in kolonner:
+            conn.execute(f"ALTER TABLE innstillinger ADD COLUMN {kol} REAL")
     conn.commit()
 
 
@@ -345,3 +348,125 @@ def er_treningsdag_i_dag(conn, i_dag: date, restitusjon):
             break
     _sett_treningsdager(conn, uke_start, dager)
     return False, grunn
+
+
+
+# ---- Hva alkoholen gjør med deg ----
+
+MIN_DAGER_EFFEKT = 5
+KALORIER_PER_ENHET = 100
+KALORIER_PER_KG = 7700
+ENHETER_NAAR_UKJENT = 2
+STANDARD_KR_PER_ENHET = 40
+
+
+def beste_alkoholfrie_rekke(conn, i_dag: date) -> int:
+    """Lengste rekke alkoholfrie hverdager (man-tor) noensinne. Samme regler
+    som alkoholfrie_hverdager_pa_rad: helg hopper over, uregistrert hverdag
+    bryter (unntatt i dag, som ikke er ferdig)."""
+    rader = {r["dato"]: r["alkohol"] for r in conn.execute("SELECT dato, alkohol FROM dagssjekk")}
+    if not rader:
+        return 0
+    d = date.fromisoformat(min(rader))
+    beste = naa = 0
+    while d <= i_dag:
+        if d.isoweekday() <= 4:
+            alkohol = rader.get(d.isoformat())
+            if alkohol is None and d == i_dag:
+                pass
+            elif alkohol is None or alkohol:
+                naa = 0
+            else:
+                naa += 1
+                beste = max(beste, naa)
+        d += timedelta(days=1)
+    return beste
+
+
+def _snitt(verdier):
+    return round(sum(verdier) / len(verdier)) if verdier else None
+
+
+def alkohol_effekt(conn, i_dag: date) -> dict:
+    """Sammenligner Oura-tallene dagen ETTER dager med og uten alkohol
+    (siste 180 dager). Krever minst 5 dager i hver gruppe."""
+    fra = (i_dag - timedelta(days=180)).isoformat()
+    oura = {}
+    for r in conn.execute("SELECT dato, type, verdi FROM oura_malinger WHERE type IN ('restitusjon_score', 'sovn_score')"):
+        oura.setdefault(r["dato"], {})[r["type"]] = r["verdi"]
+    grupper = {True: {"restitusjon": [], "sovn": []}, False: {"restitusjon": [], "sovn": []}}
+    for r in conn.execute("SELECT dato, alkohol FROM dagssjekk WHERE dato >= ? AND dato < ?", (fra, i_dag.isoformat())):
+        neste = oura.get((date.fromisoformat(r["dato"]) + timedelta(days=1)).isoformat(), {})
+        if "restitusjon_score" not in neste:
+            continue
+        g = grupper[bool(r["alkohol"])]
+        g["restitusjon"].append(neste["restitusjon_score"])
+        if "sovn_score" in neste:
+            g["sovn"].append(neste["sovn_score"])
+    med, uten = grupper[True], grupper[False]
+    n_med, n_uten = len(med["restitusjon"]), len(uten["restitusjon"])
+    resultat = {
+        "nok_data": n_med >= MIN_DAGER_EFFEKT and n_uten >= MIN_DAGER_EFFEKT,
+        "dager_med": n_med,
+        "dager_uten": n_uten,
+        "trengs_med": max(0, MIN_DAGER_EFFEKT - n_med),
+        "trengs_uten": max(0, MIN_DAGER_EFFEKT - n_uten),
+    }
+    if resultat["nok_data"]:
+        resultat.update({
+            "restitusjon_med": _snitt(med["restitusjon"]),
+            "restitusjon_uten": _snitt(uten["restitusjon"]),
+            "sovn_med": _snitt(med["sovn"]),
+            "sovn_uten": _snitt(uten["sovn"]),
+        })
+    return resultat
+
+
+def hent_alkohol_utgangspunkt(conn):
+    rad = conn.execute(
+        "SELECT alkohol_utgangspunkt_uke, alkohol_kr_per_enhet FROM innstillinger WHERE id = 1"
+    ).fetchone()
+    if not rad or rad["alkohol_utgangspunkt_uke"] is None:
+        return None
+    return {
+        "enheter_per_uke": rad["alkohol_utgangspunkt_uke"],
+        "kr_per_enhet": rad["alkohol_kr_per_enhet"] or STANDARD_KR_PER_ENHET,
+    }
+
+
+def lagre_alkohol_utgangspunkt(conn, enheter_per_uke, kr_per_enhet=None) -> dict:
+    enheter = _tall_eller_none(enheter_per_uke)
+    kr = _tall_eller_none(kr_per_enhet) if kr_per_enhet not in (None, "") else STANDARD_KR_PER_ENHET
+    if enheter is None or not 0 <= enheter <= 200:
+        raise ValueError("Skriv hvor mange enheter du drakk i en vanlig uke (0-200).")
+    if kr is None or not 0 < kr <= 500:
+        raise ValueError("Pris per enhet må være mellom 1 og 500 kr.")
+    conn.execute("UPDATE innstillinger SET alkohol_utgangspunkt_uke = ?, alkohol_kr_per_enhet = ? WHERE id = 1",
+                 (enheter, kr))
+    conn.commit()
+    return hent_alkohol_utgangspunkt(conn)
+
+
+def alkohol_spart(conn):
+    """Enheter, kroner og kalorier spart mot «slik jeg drakk før», regnet over
+    dagene som er registrert. Alkohol uten antall regnes som 2 enheter."""
+    utgangspunkt = hent_alkohol_utgangspunkt(conn)
+    if utgangspunkt is None:
+        return None
+    rader = conn.execute("SELECT dato, alkohol, alkohol_enheter FROM dagssjekk").fetchall()
+    if not rader:
+        return None
+    faktisk = sum(
+        (r["alkohol_enheter"] if r["alkohol_enheter"] is not None else ENHETER_NAAR_UKJENT)
+        for r in rader if r["alkohol"]
+    )
+    spart = round(utgangspunkt["enheter_per_uke"] / 7 * len(rader) - faktisk, 1)
+    kalorier = round(spart * KALORIER_PER_ENHET)
+    return {
+        "enheter_spart": spart,
+        "kr": round(spart * utgangspunkt["kr_per_enhet"]),
+        "kalorier": kalorier,
+        "kg": round(kalorier / KALORIER_PER_KG, 2),
+        "dager": len(rader),
+        "fra_dato": min(r["dato"] for r in rader),
+    }

@@ -97,7 +97,46 @@
         <label class="notat-rad">Notat (valgfritt)
           <textarea id="sjekkNotat" rows="2" placeholder="Noe du vil huske om i dag?"></textarea>
         </label>
-        <p class="rekke" id="alkoholfriRekke"></p>
+      </div>
+
+      <div class="card alkohol-kort" id="alkoholKort">
+        <h2>Alkohol og kroppen din</h2>
+        <div class="rekke-rad">
+          <div class="rekke-tall"><strong id="rekkeNa">0</strong><span>alkoholfrie hverdager på rad</span></div>
+          <div class="rekke-tall rekke-beste"><strong id="rekkeBeste">0</strong><span>beste rekke</span></div>
+        </div>
+
+        <div id="effektBlokk" class="effekt-blokk">
+          <h3 class="under-tittel">Dagen etter alkohol</h3>
+          <div id="effektVisning" class="hidden">
+            <div class="effekt-maling" id="effektRestitusjon"></div>
+            <div class="effekt-maling" id="effektSovn"></div>
+            <p class="hint" id="effektGrunnlag"></p>
+          </div>
+          <p class="hint hidden" id="effektVenter"></p>
+        </div>
+
+        <div id="spartBlokk" class="spart-blokk">
+          <h3 class="under-tittel">Spart</h3>
+          <div id="spartVisning" class="hidden">
+            <p class="spart-hoved" id="spartHoved"></p>
+            <p class="hint" id="spartUnder"></p>
+            <button type="button" class="lenke-knapp" id="spartEndreBtn">Endre utgangspunkt</button>
+          </div>
+          <div id="spartSkjema" class="hidden">
+            <p class="hint">Hvor mye drakk du i en vanlig uke før du startet? Da regner appen ut hva du sparer i kroner og kalorier.</p>
+            <div class="inline-form">
+              <label>Enheter per uke
+                <input type="text" id="utgangspunktEnheter" inputmode="decimal" placeholder="F.eks. 15" />
+              </label>
+              <label>Kr per enhet
+                <input type="text" id="utgangspunktKr" inputmode="decimal" value="40" />
+              </label>
+            </div>
+            <button type="button" class="btn primary" id="utgangspunktLagreBtn">Lagre</button>
+            <p class="feiltekst hidden" id="utgangspunktFeil"></p>
+          </div>
+        </div>
       </div>
 
       <div class="card helg-kort hidden" id="helgKort">

@@ -1212,6 +1212,30 @@ def api_helg():
     return jsonify({"planlagte_enheter": enheter, "tips": tips})
 
 
+# ---- Hva alkoholen gjør med deg ----
+
+@app.route("/api/alkohol-innsikt")
+def api_alkohol_innsikt():
+    db = get_db()
+    i_dag = livsstil.i_dag_oslo()
+    return jsonify({
+        "rekke": livsstil.alkoholfrie_hverdager_pa_rad(db, i_dag),
+        "beste_rekke": livsstil.beste_alkoholfrie_rekke(db, i_dag),
+        "effekt": livsstil.alkohol_effekt(db, i_dag),
+        "spart": livsstil.alkohol_spart(db),
+        "utgangspunkt": livsstil.hent_alkohol_utgangspunkt(db),
+    })
+
+
+@app.route("/api/alkohol-innsikt/utgangspunkt", methods=["POST"])
+def api_alkohol_utgangspunkt():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(livsstil.lagre_alkohol_utgangspunkt(get_db(), data.get("enheter_per_uke"), data.get("kr_per_enhet")))
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+
+
 # ---- Push-varsler ----
 
 @app.route("/sw.js")

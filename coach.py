@@ -128,7 +128,17 @@ def lag_sammendrag(conn, i_dag: date) -> str:
     if mal:
         linjer.append(f"Målvekt: {mal:g} kg.")
 
-    linjer.append(f"Alkoholfrie hverdager på rad: {livsstil.alkoholfrie_hverdager_pa_rad(conn, i_dag)}.")
+    linjer.append(f"Alkoholfrie hverdager på rad: {livsstil.alkoholfrie_hverdager_pa_rad(conn, i_dag)} "
+                  f"(beste noensinne: {livsstil.beste_alkoholfrie_rekke(conn, i_dag)}).")
+    effekt = livsstil.alkohol_effekt(conn, i_dag)
+    if effekt["nok_data"]:
+        linjer.append(
+            f"Hans egne Oura-tall: restitusjon dagen etter alkohol {effekt['restitusjon_med']} mot "
+            f"{effekt['restitusjon_uten']} ellers; søvn {effekt['sovn_med']} mot {effekt['sovn_uten']}."
+        )
+    spart = livsstil.alkohol_spart(conn)
+    if spart and spart["enheter_spart"] > 0:
+        linjer.append(f"Spart siden {spart['fra_dato']}: {spart['enheter_spart']:g} enheter, ca. {spart['kr']} kr og {spart['kalorier']} kalorier.")
 
     linjer.append("Avkrysning siste 14 dager (dato: fastet/alkohol(enheter)/trent/syk):")
     for i in range(14, 0, -1):

@@ -1321,3 +1321,80 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 .tider-form input[type="time"] { width: auto; font-size: 16px; }
 
 .stats-grid:has(.stat-tile:nth-child(3)) { grid-template-columns: repeat(3, 1fr); }
+
+
+/* ---------- Alkohol og kroppen din ---------- */
+
+.rekke-rad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.rekke-tall {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+
+.rekke-tall strong {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--accent-dark);
+}
+
+.rekke-tall span { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.rekke-beste { background: var(--muted-soft); }
+.rekke-beste strong { color: var(--text); }
+
+.effekt-blokk, .spart-blokk { margin-top: 4px; }
+
+.effekt-maling { margin-bottom: 14px; }
+
+.effekt-topp {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.effekt-topp strong { font-size: 15px; color: var(--accent-dark); }
+.effekt-topp strong.effekt-ned { color: var(--warn); }
+
+.effekt-stolpe {
+  display: grid;
+  grid-template-columns: 92px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.effekt-etikett { color: var(--muted); font-weight: 700; }
+
+.effekt-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--v), var(--muted-soft) var(--v));
+}
+
+.effekt-bar-med {
+  background: linear-gradient(to right, var(--warn) var(--v), var(--muted-soft) var(--v));
+}
+
+.effekt-verdi { font-weight: 800; text-align: right; }
+
+.spart-hoved {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent-dark);
+}
+
+.spart-blokk .inline-form { margin-bottom: 10px; }
