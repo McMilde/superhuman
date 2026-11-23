@@ -215,6 +215,20 @@
         </div>
       </div>
 
+      <div class="card kurs-kort hidden" id="kursKort">
+        <p class="kurs-dag" id="kursDag"></p>
+        <h2 id="kursTittel"></h2>
+        <div id="kursInnhold" class="hidden">
+          <div id="kursTekst" class="kurs-tekst"></div>
+          <div class="kurs-prov"><strong>Prøv i dag:</strong> <span id="kursProv"></span></div>
+          <button type="button" class="btn primary" id="kursFerdigBtn">Ferdig lest</button>
+        </div>
+        <div class="kurs-knapper">
+          <button type="button" class="btn primary" id="kursLesBtn">Les (2 min)</button>
+          <button type="button" class="lenke-knapp" id="kursAlleBtn">Alle leksjoner</button>
+        </div>
+      </div>
+
       <div class="card middag-kort" id="middagKort">
         <h2>Middag i dag</h2>
         <p class="middag-navn" id="middagNavn">–</p>
@@ -336,6 +350,21 @@
         <textarea id="chatTekst" rows="2" placeholder="F.eks. Hva kan jeg spise til kvelds?"></textarea>
         <button type="submit" class="btn primary" id="chatSendBtn">Send</button>
       </form>
+    </div>
+  </div>
+
+  <div id="kursOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header card-header">
+        <h2 id="kursModalTittel">Leksjoner</h2>
+        <button type="button" class="lenke-knapp" id="kursLukkBtn">Lukk</button>
+      </div>
+      <ul id="kursListe" class="kurs-liste"></ul>
+      <div id="kursModalLeksjon" class="hidden">
+        <div id="kursModalTekst" class="kurs-tekst"></div>
+        <div class="kurs-prov"><strong>Prøv i dag:</strong> <span id="kursModalProv"></span></div>
+        <button type="button" class="lenke-knapp" id="kursTilbakeBtn">Tilbake til listen</button>
+      </div>
     </div>
   </div>
 

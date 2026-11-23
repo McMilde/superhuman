@@ -139,6 +139,10 @@ def lag_sammendrag(conn, i_dag: date) -> str:
 
     linjer.append(f"Alkoholfrie hverdager på rad: {livsstil.alkoholfrie_hverdager_pa_rad(conn, i_dag)} "
                   f"(beste noensinne: {livsstil.beste_alkoholfrie_rekke(conn, i_dag)}).")
+    import kurs
+    leksjon = kurs.dagens_tittel_hvis_lest(conn, i_dag)
+    if leksjon:
+        linjer.append(f"Han leste minikurs-leksjonen «{leksjon}» i dag – knytt gjerne an til den.")
     ukemal = livsstil.hent_ukemal(conn, livsstil.mandag_for(i_dag))
     if ukemal:
         linjer.append(f"Ukemål denne uka (valgt av ham selv – følg det opp): {ukemal}.")

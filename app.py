@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import coach
+import kurs
 import livsstil
 import varsler
 from flask import (
@@ -317,6 +318,7 @@ def init_db():
 
     conn.commit()
     livsstil.opprett_tabeller(conn)
+    kurs.opprett_tabell(conn)
     conn.close()
 
 
@@ -1314,6 +1316,33 @@ def api_endre_enhet():
     i_dag = livsstil.i_dag_oslo()
     rad = livsstil.endre_enheter(db, i_dag.isoformat(), endring)
     return jsonify({"dagssjekk": rad, "brukt_i_helgen": livsstil.brukt_i_helgen(db, livsstil.mandag_for(i_dag))})
+
+
+# ---- Minikurs ----
+
+@app.route("/api/kurs")
+def api_kurs():
+    return jsonify(kurs.status(get_db(), livsstil.i_dag_oslo()))
+
+
+@app.route("/api/kurs/lest", methods=["POST"])
+def api_kurs_lest():
+    nr = (request.get_json(force=True) or {}).get("nr")
+    if isinstance(nr, bool) or not isinstance(nr, int):
+        return jsonify({"error": "Ugyldig leksjon"}), 400
+    try:
+        kurs.marker_lest(get_db(), nr, livsstil.i_dag_oslo())
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+    return jsonify(kurs.status(get_db(), livsstil.i_dag_oslo()))
+
+
+@app.route("/api/kurs/leksjon/<int:nr>")
+def api_kurs_leksjon(nr):
+    leksjon = kurs.hent_leksjon(get_db(), nr, livsstil.i_dag_oslo())
+    if leksjon is None:
+        return jsonify({"error": "Leksjonen er ikke låst opp ennå"}), 404
+    return jsonify(leksjon)
 
 
 # ---- Hva alkoholen gjør med deg ----

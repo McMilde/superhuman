@@ -1655,3 +1655,42 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 
 .oura-tilgang { margin: 12px 0 0; }
 .oura-tilgang a { color: var(--accent); font-weight: 700; }
+
+
+/* ---------- Minikurs ---------- */
+
+.kurs-dag { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.kurs-kort h2 { font-size: 20px; margin-bottom: 10px; }
+.kurs-kort.kurs-lest h2 { font-size: 17px; color: var(--text); }
+
+.kurs-tekst p { margin: 0 0 12px; font-size: 16px; line-height: 1.6; max-width: 62ch; }
+
+.kurs-prov {
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  line-height: 1.5;
+}
+
+.kurs-prov strong { color: var(--accent-dark); }
+
+.kurs-knapper { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+.kurs-liste { list-style: none; margin: 0; padding: 0; }
+
+.kurs-rad {
+  width: 100%;
+  text-align: left;
+  min-height: 48px;
+  padding: 10px 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.kurs-rad span { color: var(--muted); font-weight: 800; margin-right: 6px; }

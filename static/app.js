@@ -100,6 +100,7 @@ async function lastIdag() {
   visUkemal(dagData.ukemal);
   visMiddag(dagData.middag);
   lastAlkoholInnsikt();
+  lastKurs();
 }
 
 function visCoach(d) {
@@ -401,6 +402,78 @@ async function lagrePlaner() {
   } catch (e) {}
   btn.disabled = false;
   visHelg(dagData);
+}
+
+// ---- Minikurs ----
+
+let kursData = null;
+
+function avsnitt(liste) {
+  return liste.map((t) => `<p>${escapeHtml(t)}</p>`).join("");
+}
+
+async function lastKurs() {
+  kursData = await hentJson("/api/kurs").catch(() => null);
+  if (!kursData) return;
+  const kort = $("kursKort");
+  kort.classList.remove("hidden");
+  const d = kursData.dagens;
+  $("kursInnhold").classList.add("hidden");
+  if (!d) {
+    $("kursDag").textContent = "Minikurs fullført";
+    $("kursTittel").textContent = "Du har lest alle 30 leksjonene 🎉";
+    $("kursLesBtn").classList.add("hidden");
+    return;
+  }
+  $("kursDag").textContent = kursData.lest_i_dag
+    ? `Dag ${d.nr} av ${kursData.totalt} · lest ✓ · ny leksjon i morgen`
+    : `Dagens leksjon · dag ${d.nr} av ${kursData.totalt}`;
+  $("kursTittel").textContent = d.tittel;
+  $("kursTekst").innerHTML = avsnitt(d.tekst);
+  $("kursProv").textContent = d.prov;
+  $("kursLesBtn").textContent = kursData.lest_i_dag ? "Les igjen" : "Les (2 min)";
+  $("kursLesBtn").classList.remove("hidden");
+  $("kursFerdigBtn").classList.toggle("hidden", kursData.lest_i_dag);
+  kort.classList.toggle("kurs-lest", kursData.lest_i_dag);
+}
+
+function apneKursLeksjon() {
+  $("kursInnhold").classList.remove("hidden");
+  $("kursLesBtn").classList.add("hidden");
+}
+
+async function ferdigLest() {
+  const btn = $("kursFerdigBtn");
+  btn.disabled = true;
+  try {
+    await postJson("/api/kurs/lest", { nr: kursData.dagens.nr });
+    await lastKurs();
+  } catch (e) {
+    btn.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function apneKursListe() {
+  $("kursModalTittel").textContent = "Leksjoner du har lest";
+  $("kursModalLeksjon").classList.add("hidden");
+  const liste = $("kursListe");
+  liste.classList.remove("hidden");
+  liste.innerHTML = kursData.leste.length
+    ? kursData.leste.map((l) => `<li><button type="button" class="kurs-rad" data-leksjon="${l.nr}"><span>${l.nr}.</span> ${escapeHtml(l.tittel)}</button></li>`).join("")
+    : `<li class="tom">Du har ikke lest noen leksjoner ennå. Start med dagens!</li>`;
+  $("kursOverlay").classList.remove("hidden");
+}
+
+async function visGammelLeksjon(nr) {
+  const l = await hentJson(`/api/kurs/leksjon/${nr}`).catch(() => null);
+  if (!l) return;
+  $("kursModalTittel").textContent = `${l.nr}. ${l.tittel}`;
+  $("kursModalTekst").innerHTML = avsnitt(l.tekst);
+  $("kursModalProv").textContent = l.prov;
+  $("kursListe").classList.add("hidden");
+  $("kursModalLeksjon").classList.remove("hidden");
 }
 
 // ---- Ukemål ----
@@ -1398,6 +1471,16 @@ function main() {
     $("helgVisning").classList.add("hidden");
   });
   $("plussEnhetBtn").addEventListener("click", () => endreEnhet(1));
+  $("kursLesBtn").addEventListener("click", apneKursLeksjon);
+  $("kursFerdigBtn").addEventListener("click", ferdigLest);
+  $("kursAlleBtn").addEventListener("click", apneKursListe);
+  $("kursLukkBtn").addEventListener("click", () => $("kursOverlay").classList.add("hidden"));
+  $("kursTilbakeBtn").addEventListener("click", apneKursListe);
+  lukkVedKlikkUtenfor("kursOverlay", () => $("kursOverlay").classList.add("hidden"));
+  $("kursListe").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-leksjon]");
+    if (btn) visGammelLeksjon(Number(btn.dataset.leksjon));
+  });
   $("forrigeDagBtn").addEventListener("click", () => velgDato(flyttDato(valgtDato, -1)));
   $("nesteDagBtn").addEventListener("click", () => velgDato(flyttDato(valgtDato, 1)));
   $("historikkListe").addEventListener("click", (e) => {
