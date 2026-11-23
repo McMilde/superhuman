@@ -52,10 +52,16 @@ def test_alkoholfri_rekke_teller_med_i_dag_nar_registrert(db):
     assert livsstil.alkoholfrie_hverdager_pa_rad(db, date(2026, 11, 18)) == 2
 
 
-def test_alkoholfri_rekke_brytes_av_hull(db):
+def test_alkoholfri_rekke_ett_hull_tilgis(db):
     _sett(db, "2026-11-16", False)
-    # tirsdag 17 ikke registrert
-    assert livsstil.alkoholfrie_hverdager_pa_rad(db, date(2026, 11, 18)) == 0
+    # tirsdag 17 ikke registrert – første glipp er lov
+    assert livsstil.alkoholfrie_hverdager_pa_rad(db, date(2026, 11, 18)) == 1
+
+
+def test_alkoholfri_rekke_to_hull_bryter(db):
+    _sett(db, "2026-11-16", False)
+    # tirsdag 17 og onsdag 18 ikke registrert
+    assert livsstil.alkoholfrie_hverdager_pa_rad(db, date(2026, 11, 19)) == 0
 
 
 def test_oversikt_viser_trening_fra_dagssjekk(client, db):

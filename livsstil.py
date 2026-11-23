@@ -63,6 +63,12 @@ def opprett_tabeller(conn) -> None:
             auth TEXT NOT NULL,
             opprettet TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
+        CREATE TABLE IF NOT EXISTS ukemal (
+            uke_start TEXT PRIMARY KEY,
+            mal TEXT,
+            forslag TEXT NOT NULL DEFAULT '[]',
+            opprettet TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
         CREATE TABLE IF NOT EXISTS varsel_logg (
             dato TEXT NOT NULL,
             type TEXT NOT NULL,
@@ -140,23 +146,40 @@ def dagsstatus(conn, dato):
     }
 
 
+FRIKORT_DAGER = 7
+
+
+def rekke_status(conn, i_dag: date) -> dict:
+    """Alkoholfrie hverdager (man-tor) på rad, med ett frikort: én glipp
+    (alkohol eller glemt avkrysning) tilgis, men en ny glipp innen 7 dager
+    nullstiller rekka. Fre-søn hopper over. I dag teller bare når den er
+    registrert. Glipper tilgis bare når det finnes en rekke å redde."""
+    rader = {r["dato"]: r["alkohol"] for r in conn.execute("SELECT dato, alkohol FROM dagssjekk")}
+    if not rader:
+        return {"naa": 0, "beste": 0, "frikort_brukt": False}
+    d = date.fromisoformat(min(rader))
+    naa = beste = 0
+    tilgitt = None
+    while d <= i_dag:
+        if d.isoweekday() <= 4:
+            alkohol = rader.get(d.isoformat())
+            if alkohol is None and d == i_dag:
+                pass
+            elif alkohol == 0:
+                naa += 1
+                beste = max(beste, naa)
+            elif naa > 0 and (tilgitt is None or (d - tilgitt).days > FRIKORT_DAGER):
+                tilgitt = d
+            else:
+                naa = 0
+                tilgitt = None
+        d += timedelta(days=1)
+    frikort = tilgitt is not None and (i_dag - tilgitt).days <= FRIKORT_DAGER
+    return {"naa": naa, "beste": beste, "frikort_brukt": frikort}
+
+
 def alkoholfrie_hverdager_pa_rad(conn, i_dag: date) -> int:
-    """Hverdager (man-tor) uten alkohol på rad bakover. Fre-søn hoppes over
-    (verken teller eller bryter). I dag teller bare hvis den er registrert."""
-    teller = 0
-    d = i_dag
-    if hent_dagssjekk(conn, d.isoformat()) is None:
-        d -= timedelta(days=1)
-    for _ in range(400):
-        if d.isoweekday() >= 5:
-            d -= timedelta(days=1)
-            continue
-        sjekk = hent_dagssjekk(conn, d.isoformat())
-        if sjekk is None or sjekk["alkohol"]:
-            break
-        teller += 1
-        d -= timedelta(days=1)
-    return teller
+    return rekke_status(conn, i_dag)["naa"]
 
 
 # ---- Ukeplan og treningsdager ----
@@ -366,26 +389,7 @@ STANDARD_KR_PER_ENHET = 40
 
 
 def beste_alkoholfrie_rekke(conn, i_dag: date) -> int:
-    """Lengste rekke alkoholfrie hverdager (man-tor) noensinne. Samme regler
-    som alkoholfrie_hverdager_pa_rad: helg hopper over, uregistrert hverdag
-    bryter (unntatt i dag, som ikke er ferdig)."""
-    rader = {r["dato"]: r["alkohol"] for r in conn.execute("SELECT dato, alkohol FROM dagssjekk")}
-    if not rader:
-        return 0
-    d = date.fromisoformat(min(rader))
-    beste = naa = 0
-    while d <= i_dag:
-        if d.isoweekday() <= 4:
-            alkohol = rader.get(d.isoformat())
-            if alkohol is None and d == i_dag:
-                pass
-            elif alkohol is None or alkohol:
-                naa = 0
-            else:
-                naa += 1
-                beste = max(beste, naa)
-        d += timedelta(days=1)
-    return beste
+    return rekke_status(conn, i_dag)["beste"]
 
 
 def _snitt(verdier):
@@ -576,3 +580,115 @@ def helg_over_plan(conn, i_dag: date):
     if faktisk > plan["planlagte_enheter"]:
         return plan["planlagte_enheter"], faktisk
     return None
+
+
+
+# ---- Søndagssjekk og ukemål ----
+
+def ukestatistikk(conn, uke_start: date) -> dict:
+    datoer = [(uke_start + timedelta(days=i)).isoformat() for i in range(7)]
+    rader = {r["dato"]: r for r in conn.execute(
+        "SELECT * FROM dagssjekk WHERE dato IN ({})".format(",".join("?" * 7)), datoer)}
+    hverdager = [rader[d] for d in datoer[:4] if d in rader]
+    helg = [rader[d] for d in datoer[4:] if d in rader]
+    vekter = conn.execute(
+        "SELECT vekt_kg FROM vektlogg WHERE dato >= ? AND dato <= ? ORDER BY dato, id", (datoer[0], datoer[-1])
+    ).fetchall()
+    plan = hent_ukeplan(conn, uke_start)
+    return {
+        "uke_start": uke_start.isoformat(),
+        "alkoholfrie_hverdager": sum(1 for r in hverdager if not r["alkohol"]),
+        "registrerte_hverdager": len(hverdager),
+        "fastedager": sum(1 for r in rader.values() if r["fastet"]),
+        "treningsdager": sum(1 for r in rader.values() if r["trent"]),
+        "planlagte_treningsdager": plan["antall_trening"] if plan else None,
+        "helg_enheter": sum(
+            (r["alkohol_enheter"] if r["alkohol_enheter"] is not None else ENHETER_NAAR_UKJENT)
+            for r in helg if r["alkohol"]
+        ),
+        "registrerte_dager": len(rader),
+        "vekt_endring": round(vekter[-1]["vekt_kg"] - vekter[0]["vekt_kg"], 1) if len(vekter) >= 2 else None,
+    }
+
+
+FYLL_UKEMAL = [
+    "Halve tallerkenen grønnsaker til hver middag",
+    "Gå en tur på minst 20 minutter hver dag",
+    "Legg deg før kl. 23 på hverdager",
+    "Drikk et stort glass vann før hvert måltid",
+]
+
+
+def reserve_ukemal_forslag(conn, uke_start: date) -> list:
+    """Tre ukemål ut fra uka før: det som glapp først, så faste reserver."""
+    st = ukestatistikk(conn, uke_start - timedelta(days=7))
+    forslag = []
+    if st["alkoholfrie_hverdager"] < st["registrerte_hverdager"]:
+        forslag.append("Alkoholfrie hverdager – alle fire, mandag til torsdag")
+    if st["planlagte_treningsdager"] and st["treningsdager"] < st["planlagte_treningsdager"]:
+        forslag.append(f"Gjennomfør alle {st['planlagte_treningsdager']} treningsdagene")
+    if st["registrerte_dager"] and st["fastedager"] < 5:
+        forslag.append("Fast minst 5 av 7 dager")
+    for f in FYLL_UKEMAL:
+        if len(forslag) >= 3:
+            break
+        forslag.append(f)
+    return forslag[:3]
+
+
+def _hent_ukemal_rad(conn, uke_start: date):
+    return conn.execute("SELECT * FROM ukemal WHERE uke_start = ?", (uke_start.isoformat(),)).fetchone()
+
+
+def lagre_ukemal_forslag(conn, uke_start: date, forslag: list) -> None:
+    conn.execute(
+        """
+        INSERT INTO ukemal (uke_start, forslag) VALUES (?, ?)
+        ON CONFLICT(uke_start) DO UPDATE SET forslag = excluded.forslag
+        """,
+        (uke_start.isoformat(), json.dumps(forslag, ensure_ascii=False)),
+    )
+    conn.commit()
+
+
+def velg_ukemal(conn, uke_start: date, mal: str) -> str:
+    mal = (mal or "").strip()[:200]
+    if not mal:
+        raise ValueError("Skriv eller velg et ukemål.")
+    conn.execute(
+        """
+        INSERT INTO ukemal (uke_start, mal) VALUES (?, ?)
+        ON CONFLICT(uke_start) DO UPDATE SET mal = excluded.mal
+        """,
+        (uke_start.isoformat(), mal),
+    )
+    conn.commit()
+    return mal
+
+
+def hent_ukemal(conn, uke_start: date):
+    rad = _hent_ukemal_rad(conn, uke_start)
+    return rad["mal"] if rad else None
+
+
+def aktivt_ukemal(conn, i_dag: date, lag_forslag=None) -> dict:
+    """Ukemålet som skal vises i dag. Søndag, når neste ukes forslag er klare,
+    gjelder det neste uke. Mangler forslag, lages de på stedet."""
+    denne = mandag_for(i_dag)
+    neste = denne + timedelta(days=7)
+    uke, gjelder = denne, "denne"
+    if i_dag.isoweekday() == 7 and _hent_ukemal_rad(conn, neste) is not None:
+        uke, gjelder = neste, "neste"
+    rad = _hent_ukemal_rad(conn, uke)
+    forslag = json.loads(rad["forslag"]) if rad else []
+    if not forslag:
+        forslag = (lag_forslag or reserve_ukemal_forslag)(conn, uke)
+        lagre_ukemal_forslag(conn, uke, forslag)
+        rad = _hent_ukemal_rad(conn, uke)
+    return {
+        "uke_start": uke.isoformat(),
+        "gjelder": gjelder,
+        "mal": rad["mal"],
+        "forslag": forslag,
+        "statistikk": ukestatistikk(conn, uke - timedelta(days=7)),
+    }

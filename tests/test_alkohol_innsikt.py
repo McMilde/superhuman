@@ -32,10 +32,16 @@ def test_beste_rekke_husker_lengste(db):
     assert livsstil.beste_alkoholfrie_rekke(db, date(2026, 11, 18)) == 4
 
 
-def test_beste_rekke_hull_bryter(db):
+def test_beste_rekke_ett_hull_tilgis(db):
     _sett(db, "2026-11-02", False)
-    _sett(db, "2026-11-04", False)  # tirsdag mangler
-    assert livsstil.beste_alkoholfrie_rekke(db, date(2026, 11, 5)) == 1
+    _sett(db, "2026-11-04", False)  # tirsdag mangler – tilgis
+    assert livsstil.beste_alkoholfrie_rekke(db, date(2026, 11, 5)) == 2
+
+
+def test_beste_rekke_to_hull_bryter(db):
+    _sett(db, "2026-11-02", False)
+    _sett(db, "2026-11-05", False)  # tirsdag og onsdag mangler
+    assert livsstil.beste_alkoholfrie_rekke(db, date(2026, 11, 6)) == 1
 
 
 def test_beste_rekke_hopper_over_helg(db):

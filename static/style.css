@@ -1476,3 +1476,45 @@ li.tom { color: var(--muted); font-size: 14px; padding: 8px 0; }
 @media (prefers-reduced-motion: reduce) {
   .teller-bar span { transition: none; }
 }
+
+
+/* ---------- Ukemål ---------- */
+
+.ukemal-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.ukemal-strip p { margin: 0; line-height: 1.4; }
+.ukemal-strip span { color: var(--muted); font-weight: 700; font-size: 14px; }
+.ukemal-strip strong { color: var(--accent-dark); }
+
+.uke-stat {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.uke-stat-rute {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--muted-soft);
+}
+
+.uke-stat-rute strong { font-size: 22px; font-weight: 800; color: var(--text); }
+.uke-stat-rute span { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.ukemal-kort .plan-forslag { margin-bottom: 8px; }
+
+.rekke-forklaring { margin: 10px 0 4px; }
+.rekke-forklaring.frikort-brukt { color: var(--warn); font-weight: 700; }

@@ -1143,6 +1143,7 @@ def api_i_dag():
         "treningsdager": plan["treningsdager"],
         "alkoholfri_rekke": livsstil.alkoholfrie_hverdager_pa_rad(db, i_dag),
         "helg": _helgeplan(db, livsstil.mandag_for(i_dag)),
+        "ukemal": livsstil.aktivt_ukemal(db, i_dag),
         "er_fredag_til_sondag": i_dag.isoweekday() >= 5,
     })
 
@@ -1202,6 +1203,20 @@ def api_helg():
     return jsonify({**plan, "planforslag": coach.hvis_saa_forslag(db, enheter)})
 
 
+@app.route("/api/ukemal", methods=["POST"])
+def api_ukemal():
+    data = request.get_json(force=True) or {}
+    denne = livsstil.mandag_for(livsstil.i_dag_oslo())
+    gyldige = {denne.isoformat(): denne, (denne + timedelta(days=7)).isoformat(): denne + timedelta(days=7)}
+    uke = gyldige.get(str(data.get("uke_start")))
+    if uke is None:
+        return jsonify({"error": "Ukemålet må gjelde denne eller neste uke"}), 400
+    try:
+        return jsonify({"mal": livsstil.velg_ukemal(get_db(), uke, data.get("mal"))})
+    except ValueError as feil:
+        return jsonify({"error": str(feil)}), 400
+
+
 @app.route("/api/helg/planer", methods=["POST"])
 def api_helg_planer():
     planer = (request.get_json(force=True) or {}).get("planer")
@@ -1231,9 +1246,11 @@ def api_endre_enhet():
 def api_alkohol_innsikt():
     db = get_db()
     i_dag = livsstil.i_dag_oslo()
+    rekke = livsstil.rekke_status(db, i_dag)
     return jsonify({
-        "rekke": livsstil.alkoholfrie_hverdager_pa_rad(db, i_dag),
-        "beste_rekke": livsstil.beste_alkoholfrie_rekke(db, i_dag),
+        "rekke": rekke["naa"],
+        "beste_rekke": rekke["beste"],
+        "frikort_brukt": rekke["frikort_brukt"],
         "effekt": livsstil.alkohol_effekt(db, i_dag),
         "spart": livsstil.alkohol_spart(db),
         "utgangspunkt": livsstil.hent_alkohol_utgangspunkt(db),

@@ -90,9 +90,11 @@ async function lastIdag() {
     $("coachTekst").textContent = "Sjekk nettet og dra ned for å prøve igjen.";
     return;
   }
+  $("toppDato").textContent = langDato(dagData.dato);
   visCoach(dagData);
   visSjekk(dagData.dagssjekk);
   visHelg(dagData);
+  visUkemal(dagData.ukemal);
   visMiddag(dagData.middag);
   lastAlkoholInnsikt();
 }
@@ -180,6 +182,10 @@ async function lastAlkoholInnsikt() {
   const d = innsiktData;
   $("rekkeNa").textContent = d.rekke;
   $("rekkeBeste").textContent = Math.max(d.beste_rekke, d.rekke);
+  $("rekkeForklaring").textContent = d.frikort_brukt
+    ? "Frikortet er brukt: rekka lever videre, men en ny glipp de neste dagene nullstiller den."
+    : "Én glipp er lov uten at rekka nullstilles. To innen en uke, og den starter på nytt.";
+  $("rekkeForklaring").classList.toggle("frikort-brukt", !!d.frikort_brukt);
 
   const e = d.effekt;
   $("effektVisning").classList.toggle("hidden", !e.nok_data);
@@ -348,6 +354,66 @@ async function lagrePlaner() {
   } catch (e) {}
   btn.disabled = false;
   visHelg(dagData);
+}
+
+// ---- Ukemål ----
+
+let valgtUkemal = null;
+
+function statRute(tall_, tekst) {
+  return `<div class="uke-stat-rute"><strong>${tall_}</strong><span>${tekst}</span></div>`;
+}
+
+function visUkemal(m, tvingValg = false) {
+  if (!m) return;
+  const harMal = !!m.mal;
+  const visValg = !harMal || tvingValg;
+  $("ukemalStrip").classList.toggle("hidden", visValg || m.gjelder === "neste");
+  $("ukemalKort").classList.toggle("hidden", !visValg);
+  if (harMal) $("ukemalTekst").textContent = m.mal;
+  if (!visValg) return;
+
+  $("ukemalTittel").textContent = m.gjelder === "neste" ? "Uka som gikk – og målet for neste uke" : "Velg ukemål for denne uka";
+  const st = m.statistikk;
+  const stEl = $("ukeStat");
+  if (st && st.registrerte_dager > 0) {
+    const ruter = [
+      statRute(`${st.alkoholfrie_hverdager}/${st.registrerte_hverdager}`, "alkoholfrie hverdager"),
+      statRute(st.fastedager, "dager fastet"),
+      statRute(st.planlagte_treningsdager ? `${st.treningsdager}/${st.planlagte_treningsdager}` : st.treningsdager, "treningsdager"),
+    ];
+    if (st.vekt_endring != null) ruter.push(statRute(`${st.vekt_endring > 0 ? "+" : ""}${tall(st.vekt_endring, 1)} kg`, "vekt"));
+    else ruter.push(statRute(tall(st.helg_enheter, st.helg_enheter % 1 ? 1 : 0), "enheter i helgen"));
+    stEl.innerHTML = ruter.join("");
+    stEl.classList.remove("hidden");
+  } else {
+    stEl.classList.add("hidden");
+  }
+  valgtUkemal = m.forslag.includes(m.mal) ? m.mal : null;
+  $("egetUkemal").value = harMal && !m.forslag.includes(m.mal) ? m.mal : "";
+  $("ukemalForslag").innerHTML = m.forslag
+    .map((f, i) => `<button type="button" class="plan-valg" aria-pressed="${f === valgtUkemal}" data-ukemal="${i}">${escapeHtml(f)}</button>`)
+    .join("");
+}
+
+async function lagreUkemal() {
+  const m = dagData.ukemal;
+  const mal = $("egetUkemal").value.trim() || valgtUkemal;
+  const feil = $("ukemalFeil");
+  feil.classList.add("hidden");
+  if (!mal) {
+    feil.textContent = "Trykk på et av forslagene, eller skriv ditt eget mål.";
+    feil.classList.remove("hidden");
+    return;
+  }
+  try {
+    const r = await postJson("/api/ukemal", { uke_start: m.uke_start, mal });
+    m.mal = r.mal;
+    visUkemal(m);
+  } catch (e) {
+    feil.textContent = e.message;
+    feil.classList.remove("hidden");
+  }
 }
 
 async function visVanskelig() {
@@ -1188,6 +1254,21 @@ function main() {
     $("helgVisning").classList.add("hidden");
   });
   $("plussEnhetBtn").addEventListener("click", () => endreEnhet(1));
+  $("ukemalLagreBtn").addEventListener("click", lagreUkemal);
+  $("ukemalEndreBtn").addEventListener("click", () => visUkemal(dagData.ukemal, true));
+  $("egetUkemal").addEventListener("input", () => {
+    if ($("egetUkemal").value.trim()) {
+      valgtUkemal = null;
+      document.querySelectorAll("#ukemalForslag .plan-valg").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    }
+  });
+  $("ukemalForslag").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-ukemal]");
+    if (!btn) return;
+    valgtUkemal = dagData.ukemal.forslag[Number(btn.dataset.ukemal)];
+    $("egetUkemal").value = "";
+    document.querySelectorAll("#ukemalForslag .plan-valg").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+  });
   $("minusEnhetBtn").addEventListener("click", () => endreEnhet(-1));
   $("planerLagreBtn").addEventListener("click", lagrePlaner);
   $("planForslag").addEventListener("click", (e) => {

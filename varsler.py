@@ -175,8 +175,11 @@ def _jobb_sondag(conn, i_dag, synk, sender):
         (denne_uka.isoformat(), oppsummering),
     )
     conn.commit()
-    livsstil.hent_eller_lag_ukeplan(conn, denne_uka + timedelta(days=7), lag_plan=coach.lag_ukeplan_med_claude)
-    send_til_alle(conn, "Ny uke klar", "Ukemeny, handleliste og treningsdager er klare.", "/#mat", sender=sender)
+    neste_uke = denne_uka + timedelta(days=7)
+    livsstil.hent_eller_lag_ukeplan(conn, neste_uke, lag_plan=coach.lag_ukeplan_med_claude)
+    livsstil.lagre_ukemal_forslag(conn, neste_uke, coach.ukemal_forslag(conn, neste_uke))
+    send_til_alle(conn, "Ny uke klar – velg ukemålet ditt",
+                  "Se hvordan uka gikk og velg ett mål. Ukemeny og handleliste er også klare.", "/", sender=sender)
     return True
 
 

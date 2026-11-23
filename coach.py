@@ -47,6 +47,10 @@ class HvisSaa(BaseModel):
     planer: list[str]
 
 
+class Ukemal(BaseModel):
+    forslag: list[str]
+
+
 SYSTEM_PROMPT = """Du er Eivins personlige livsstilscoach i appen hans. Skriv alltid på norsk (bokmål).
 
 Om Eivin:
@@ -134,6 +138,9 @@ def lag_sammendrag(conn, i_dag: date) -> str:
 
     linjer.append(f"Alkoholfrie hverdager på rad: {livsstil.alkoholfrie_hverdager_pa_rad(conn, i_dag)} "
                   f"(beste noensinne: {livsstil.beste_alkoholfrie_rekke(conn, i_dag)}).")
+    ukemal = livsstil.hent_ukemal(conn, livsstil.mandag_for(i_dag))
+    if ukemal:
+        linjer.append(f"Ukemål denne uka (valgt av ham selv – følg det opp): {ukemal}.")
     effekt = livsstil.alkohol_effekt(conn, i_dag)
     if effekt["nok_data"]:
         linjer.append(
@@ -447,3 +454,23 @@ def hent_eller_lag_dagsmelding(conn, i_dag: date, naa=None) -> dict:
     )
     conn.commit()
     return dict(conn.execute("SELECT * FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone())
+
+
+
+def ukemal_forslag(conn, uke_start: date) -> list:
+    """Tre konkrete, målbare ukemål for uka som starter uke_start, ut fra uka før."""
+    reserve = livsstil.reserve_ukemal_forslag(conn, uke_start)
+    st = livsstil.ukestatistikk(conn, uke_start - timedelta(days=7))
+    try:
+        svar = sporr_claude(
+            SYSTEM_PROMPT,
+            "Foreslå nøyaktig 3 ukemål for neste uke. Hvert mål: én kort setning, konkret og målbart, "
+            "og realistisk for én uke. Det første målet bør ta tak i det som glapp mest forrige uke. "
+            f"Forrige uke: {st}.\n\n" + lag_sammendrag(conn, uke_start - timedelta(days=1)),
+            Ukemal, "low",
+        )
+        if len(svar.forslag) < 3:
+            raise CoachUtilgjengelig("for få forslag")
+        return [f.strip() for f in svar.forslag[:3]]
+    except CoachUtilgjengelig:
+        return reserve

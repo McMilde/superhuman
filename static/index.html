@@ -57,6 +57,23 @@
         </div>
       </article>
 
+      <div class="ukemal-strip hidden" id="ukemalStrip">
+        <p><span>Ukemålet ditt:</span> <strong id="ukemalTekst"></strong></p>
+        <button type="button" class="lenke-knapp" id="ukemalEndreBtn">Endre</button>
+      </div>
+
+      <div class="card ukemal-kort hidden" id="ukemalKort">
+        <h2 id="ukemalTittel">Velg ukemål</h2>
+        <div id="ukeStat" class="uke-stat hidden"></div>
+        <p class="hint">Velg ett mål å fokusere på – coachen følger det opp hele uka.</p>
+        <div id="ukemalForslag" class="plan-forslag"></div>
+        <label>Eller skriv ditt eget
+          <input type="text" id="egetUkemal" placeholder="F.eks. Ingen snacks etter middag" />
+        </label>
+        <button type="button" class="btn primary" id="ukemalLagreBtn">Lagre ukemål</button>
+        <p class="feiltekst hidden" id="ukemalFeil"></p>
+      </div>
+
       <div class="card helg-kort hidden" id="helgKort">
         <h2>Helgeplan</h2>
         <div id="helgSkjema">
@@ -152,6 +169,7 @@
           <div class="rekke-tall"><strong id="rekkeNa">0</strong><span>alkoholfrie hverdager på rad</span></div>
           <div class="rekke-tall rekke-beste"><strong id="rekkeBeste">0</strong><span>beste rekke</span></div>
         </div>
+        <p class="hint rekke-forklaring" id="rekkeForklaring">Én glipp er lov uten at rekka nullstilles. To innen en uke, og den starter på nytt.</p>
 
         <div id="effektBlokk" class="effekt-blokk">
           <h3 class="under-tittel">Dagen etter alkohol</h3>
