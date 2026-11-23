@@ -1299,9 +1299,13 @@ async function lastHistorikk() {
 }
 
 function escapeHtml(tekst) {
-  const div = document.createElement("div");
-  div.textContent = tekst == null ? "" : String(tekst);
-  return div.innerHTML;
+  // Trygg både i tekst og inne i attributter (data-…="…"): anførselstegn må også kodes.
+  return (tekst == null ? "" : String(tekst))
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ---- Oppstart ----
