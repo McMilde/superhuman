@@ -819,7 +819,7 @@ async function apneTider() {
 async function lagreTider(e) {
   e.preventDefault();
   const form = $("tiderForm");
-  const data = Object.fromEntries(["morgen", "middag", "helg", "kveld", "sondag", "risiko"].map((k) => [k, form.elements[k].value]));
+  const data = Object.fromEntries(["morgen", "frist", "middag", "helg", "kveld", "sondag", "risiko"].map((k) => [k, form.elements[k].value]));
   try {
     await postJson("/api/innstillinger/varsler", data);
     $("tiderOverlay").classList.add("hidden");

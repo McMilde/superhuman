@@ -11,7 +11,10 @@ def ingen_claude(monkeypatch):
     monkeypatch.setattr(coach, "sporr_claude", feiler)
 
 
-def test_i_dag_uten_nokkel_gir_reserve(client):
+def test_i_dag_uten_nokkel_gir_reserve(client, db):
+    db.execute("INSERT INTO oura_malinger (dato, type, verdi) VALUES (?, 'restitusjon_score', 85)",
+               (livsstil.i_dag_oslo().isoformat(),))
+    db.commit()
     r = client.get("/api/i-dag")
     assert r.status_code == 200
     data = r.json
@@ -75,3 +78,11 @@ def test_helg_lagrer_og_gir_tips(client, db):
 @pytest.mark.parametrize("verdi", [-1, 31, "mange", None])
 def test_helg_ugyldig_antall_400(client, verdi):
     assert client.post("/api/helg", json={"planlagte_enheter": verdi}).status_code == 400
+
+
+def test_i_dag_venter_paa_oura_for_fristen(client, monkeypatch):
+    from datetime import datetime
+    import varsler
+    monkeypatch.setattr(varsler, "hent_tider", lambda conn: {**varsler.STANDARD_TIDER, "frist": "23:59"})
+    data = client.get("/api/i-dag").json
+    assert data["melding"]["kilde"] == "venter" and "Oura" in data["melding"]["tekst"]

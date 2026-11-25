@@ -85,7 +85,9 @@ def send_til_alle(conn, tittel: str, tekst: str, url: str = "/", sender=None) ->
 # ---- Planlagte varsler ----
 
 STANDARD_TIDER = {"morgen": "07:00", "middag": "15:30", "helg": "15:00", "kveld": "21:00", "sondag": "18:00",
-                  "risiko": "16:30"}
+                  "risiko": "16:30", "frist": "10:00"}
+MORGENSYNK_MINUTTER = 10
+_SISTE_MORGENSYNK = {}
 VINDU_MINUTTER = 90
 
 
@@ -123,17 +125,64 @@ def _forste_setning(tekst: str) -> str:
     return tekst
 
 
+def _veid_i_dag(conn, i_dag) -> bool:
+    return conn.execute("SELECT 1 FROM vektlogg WHERE dato = ?", (i_dag.isoformat(),)).fetchone() is not None
+
+
 def _jobb_morgen(conn, i_dag, synk, sender):
+    """Kl. 07: Oura har ikke sendt natta ennå, så vi ber ham synke ringen
+    (og veie seg). Selve dagsplanen kommer når tallene er inne."""
+    veie = "" if _veid_i_dag(conn, i_dag) else " og husk å veie deg ⚖️"
+    send_til_alle(conn, "God morgen ☀️",
+                  f"Åpne Oura-appen så ringen får sendt natta di{veie}. Da lager coachen dagens plan.", "/",
+                  sender=sender)
+    return True
+
+
+def _til_minutter(tid: str) -> int:
+    t, m = (int(x) for x in tid.split(":"))
+    return t * 60 + m
+
+
+def _dagsplan(conn, naa, synk, sender) -> bool:
+    """Sender dagens plan så snart Oura har levert dagens restitusjon – synker
+    maks hvert 10. minutt – og senest ved fristen (standard 10:00)."""
     import coach
-    if synk:
-        try:
-            synk()
-        except Exception as feil:
-            print(f"Synk før morgenmelding feilet: {feil}")
-    melding = coach.hent_eller_lag_dagsmelding(conn, i_dag)
+
+    i_dag = naa.date()
+    tider = hent_tider(conn)
+    start, frist = _til_minutter(tider["morgen"]), _til_minutter(tider["frist"])
+    minutter = naa.hour * 60 + naa.minute
+    if not (start <= minutter < frist + VINDU_MINUTTER):
+        return False
+    if conn.execute("SELECT 1 FROM varsel_logg WHERE dato = ? AND type = 'dagsplan'", (i_dag.isoformat(),)).fetchone():
+        return False
+    if conn.execute("SELECT 1 FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone():
+        # Han har allerede åpnet appen med ferske tall – planen er sett, ingen push.
+        conn.execute("INSERT OR IGNORE INTO varsel_logg (dato, type) VALUES (?, 'dagsplan')", (i_dag.isoformat(),))
+        conn.commit()
+        return False
+
+    har_oura = coach.hent_restitusjon(conn, i_dag.isoformat()) is not None
+    if not har_oura and minutter < frist:
+        sist = _SISTE_MORGENSYNK.get(i_dag)
+        if synk and (sist is None or (naa - sist).total_seconds() >= MORGENSYNK_MINUTTER * 60):
+            _SISTE_MORGENSYNK[i_dag] = naa
+            try:
+                synk()
+            except Exception as feil:
+                print(f"Morgensynk feilet: {feil}")
+            har_oura = coach.hent_restitusjon(conn, i_dag.isoformat()) is not None
+        if not har_oura:
+            return False
+
+    cur = conn.execute("INSERT OR IGNORE INTO varsel_logg (dato, type) VALUES (?, 'dagsplan')", (i_dag.isoformat(),))
+    conn.commit()
+    if cur.rowcount == 0:
+        return False
+    melding = coach.hent_eller_lag_dagsmelding(conn, i_dag, naa=naa)
     tekst = _forste_setning(melding["tekst"])
-    veid = conn.execute("SELECT 1 FROM vektlogg WHERE dato = ?", (i_dag.isoformat(),)).fetchone()
-    if not veid:
+    if not _veid_i_dag(conn, i_dag):
         tekst += " Husk å veie deg ⚖️"
     send_til_alle(conn, melding["tittel"], tekst, "/", sender=sender)
     return True
@@ -239,7 +288,7 @@ def kjor_planlagte_jobber(conn, naa, synk=None, sender=None) -> list:
     i_dag = naa.date()
     minutter_na = naa.hour * 60 + naa.minute
     fyrt = []
-    planlagte = [(type_, tid) + JOBBER[type_] for type_, tid in hent_tider(conn).items()]
+    planlagte = [(type_, tid) + JOBBER[type_] for type_, tid in hent_tider(conn).items() if type_ in JOBBER]
     sluttid = _sluttid_i_dag(conn, i_dag)
     if sluttid:
         planlagte.append(("sluttid", sluttid, lambda d: True, _jobb_sluttid))
@@ -257,6 +306,11 @@ def kjor_planlagte_jobber(conn, naa, synk=None, sender=None) -> list:
                 fyrt.append(type_)
         except Exception as feil:
             print(f"Planlagt jobb '{type_}' feilet: {feil}")
+    try:
+        if _dagsplan(conn, naa, synk, sender):
+            fyrt.append("dagsplan")
+    except Exception as feil:
+        print(f"Dagsplan feilet: {feil}")
     return fyrt
 
 

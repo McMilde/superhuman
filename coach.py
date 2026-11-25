@@ -443,9 +443,9 @@ def hent_eller_lag_dagsmelding(conn, i_dag: date, naa=None) -> dict:
     """Dagens melding lages én gang per dag og lagres, slik at åpning av appen
     og morgenvarselet viser det samme (og Claude bare spørres én gang).
 
-    Åpnes appen før morgentidspunktet og Oura ikke har levert dagens
-    restitusjon ennå, lagres ingenting: da får morgenjobben (som synker Oura
-    først) avgjøre om treningen skal flyttes."""
+    Har Oura ikke levert dagens restitusjon ennå, og fristen (standard 10:00)
+    ikke er nådd, lagres ingenting: da vises en «venter»-melding, og planen
+    lages først når natta er synket – så treningsdagen avgjøres på ferske tall."""
     import varsler
 
     rad = conn.execute("SELECT * FROM dagsmelding WHERE dato = ?", (i_dag.isoformat(),)).fetchone()
@@ -456,13 +456,17 @@ def hent_eller_lag_dagsmelding(conn, i_dag: date, naa=None) -> dict:
     middag = livsstil.middag_for_dag(plan, i_dag.isoformat())
     restitusjon = hent_restitusjon(conn, i_dag.isoformat())
 
-    t, m = (int(x) for x in varsler.hent_tider(conn)["morgen"].split(":"))
-    for_morgen = naa.date() == i_dag and (naa.hour, naa.minute) < (t, m)
-    if restitusjon is None and for_morgen:
+    t, m = (int(x) for x in varsler.hent_tider(conn)["frist"].split(":"))
+    for_frist = naa.date() == i_dag and (naa.hour, naa.minute) < (t, m)
+    if restitusjon is None and for_frist:
         treningsdag = i_dag.isoformat() in plan["treningsdager"]
-        melding = lag_dagsmelding(conn, i_dag, treningsdag, None, middag, kun_reserve=True)
-        return {"dato": i_dag.isoformat(), "tittel": melding["tittel"], "tekst": melding["tekst"],
-                "treningsdag": int(treningsdag), "flyttet_fra": None, "kilde": melding["kilde"]}
+        return {
+            "dato": i_dag.isoformat(),
+            "tittel": TRENINGSDAG_TITTEL if treningsdag else "God morgen!",
+            "tekst": "Dagens plan er ikke helt klar ennå. Åpne Oura-appen så ringen får sendt natta di "
+                     "– da oppdateres planen her, basert på hvordan du har sovet.",
+            "treningsdag": int(treningsdag), "flyttet_fra": None, "kilde": "venter",
+        }
 
     treningsdag, grunn = livsstil.er_treningsdag_i_dag(conn, i_dag, restitusjon)
     melding = lag_dagsmelding(conn, i_dag, treningsdag, grunn, middag)

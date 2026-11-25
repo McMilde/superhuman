@@ -95,9 +95,15 @@ def test_morgenjobb_flytter_trening_ved_lav_restitusjon_etter_tidlig_aapning(db,
     assert m["treningsdag"] == 0 and m["flyttet_fra"]
 
 
-def test_etter_morgen_uten_oura_lagres(db, monkeypatch):
+def test_for_fristen_uten_oura_lagres_ikke(db, monkeypatch):
     monkeypatch.setattr(coach, "sporr_claude", _feiler)
     coach.hent_eller_lag_dagsmelding(db, date(2026, 11, 18), naa=datetime(2026, 11, 18, 9, 0, tzinfo=OSLO))
+    assert db.execute("SELECT COUNT(*) FROM dagsmelding").fetchone()[0] == 0
+
+
+def test_etter_fristen_uten_oura_lagres(db, monkeypatch):
+    monkeypatch.setattr(coach, "sporr_claude", _feiler)
+    coach.hent_eller_lag_dagsmelding(db, date(2026, 11, 18), naa=datetime(2026, 11, 18, 10, 5, tzinfo=OSLO))
     assert db.execute("SELECT COUNT(*) FROM dagsmelding").fetchone()[0] == 1
 
 

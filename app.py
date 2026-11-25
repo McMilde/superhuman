@@ -1169,11 +1169,31 @@ def _hent_ukeplan(db, uke_start):
     return plan
 
 
+_SISTE_APP_OURASYNK = {}
+
+
+def _synk_oura_hvis_mangler(db, dato: str):
+    """Når han åpner appen og dagens Oura-tall mangler, hentes de med en gang
+    (maks hvert 5. minutt), så planen bygger på natta som nettopp ble synket."""
+    import time
+
+    if coach.hent_restitusjon(db, dato) is not None:
+        return
+    if time.time() - _SISTE_APP_OURASYNK.get(dato, 0) < 300:
+        return
+    _SISTE_APP_OURASYNK[dato] = time.time()
+    try:
+        oura_synk()
+    except Exception as feil:
+        print(f"Oura-synk ved åpning feilet: {feil}")
+
+
 @app.route("/api/i-dag")
 def api_i_dag():
     db = get_db()
     i_dag = livsstil.i_dag_oslo()
     i_dag_str = i_dag.isoformat()
+    _synk_oura_hvis_mangler(db, i_dag_str)
     melding = coach.hent_eller_lag_dagsmelding(db, i_dag)
     plan = _hent_ukeplan(db, livsstil.mandag_for(i_dag))
     return jsonify({
